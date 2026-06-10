@@ -1,0 +1,33 @@
+import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import { CompositeNavigationProp, NavigatorScreenParams } from '@react-navigation/native';
+import { NativeStackNavigationProp, NativeStackScreenProps } from '@react-navigation/native-stack';
+
+export type MainTabParamList = {
+  Discover: undefined;
+  Map: undefined;
+  AddSpot: undefined;
+  Profile: undefined;
+};
+
+export type AuthStackParamList = {
+  Welcome: undefined;
+  Auth: { isSignUpInitial?: boolean } | undefined;
+};
+
+export type AppStackParamList = {
+  MainTabs: NavigatorScreenParams<MainTabParamList>;
+  SpotDetails: { spotId: string };
+};
+
+export type RootStackParamList = {
+  AuthStack: NavigatorScreenParams<AuthStackParamList>;
+  AppStack: NavigatorScreenParams<AppStackParamList>;
+};
+
+// Screen props helpers
+export type SpotDetailsScreenProps = NativeStackScreenProps<AppStackParamList, 'SpotDetails'>;
+
+export type DiscoverNavigationProp = CompositeNavigationProp<
+  BottomTabNavigationProp<MainTabParamList, 'Discover'>,
+  NativeStackNavigationProp<AppStackParamList>
+>;

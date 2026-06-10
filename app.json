@@ -1,25 +1,62 @@
 {
   "expo": {
     "name": "Kohsar",
-    "slug": "Kohsar",
+    "slug": "kohsar",
+    "scheme": "kohsar",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "primaryColor": "#C1440E",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Kohsar needs your location to display nearby hidden spots and guide you to Balochistan's beautiful sights.",
+        "NSCameraUsageDescription": "Kohsar needs camera access so you can take photos of new hidden spots to submit.",
+        "NSPhotoLibraryUsageDescription": "Kohsar needs access to your photo library to let you upload photos of Balochistan's hidden spots."
+      }
     },
     "android": {
+      "package": "com.kohsar.app",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "backgroundColor": "#FAFAF5",
+        "foregroundImage": "./assets/icon.png"
       },
-      "predictiveBackGestureEnabled": false
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "READ_MEDIA_IMAGES"
+      ],
+      "config": {
+        "googleMaps": {
+          "apiKey": "YOUR_GOOGLE_MAPS_API_KEY_HERE"
+        }
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "expo-font",
+      "expo-image",
+      "expo-sharing",
+      [
+        "expo-location",
+        {
+          "locationAlwaysPermission": "Kohsar does not require background location. We only access location while you use the app."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "The app accesses your photos to let you share beautiful spots in Balochistan.",
+          "cameraPermission": "The app accesses your camera to let you take photos of hidden spots in Balochistan."
+        }
+      ],
+      "expo-splash-screen"
+    ]
   }
 }
