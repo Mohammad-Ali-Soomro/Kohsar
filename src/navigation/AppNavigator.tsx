@@ -4,27 +4,30 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useAuthStore } from '../stores/authStore';
 import { useSpotsStore } from '../stores/spotsStore';
-import { useUIStore } from '../stores/uiStore';
 import { Colors } from '../constants/theme';
 import { KLoadingSpinner } from '../components/ui/KLoadingSpinner';
 
 // Screens
-import { WelcomeScreen } from '../screens/WelcomeScreen';
-import { AuthScreen } from '../screens/AuthScreen';
+import { AuthLandingScreen } from '../screens/auth/AuthLandingScreen';
+import { AuthScreen } from '../screens/auth/AuthScreen';
+import { OTPVerifyScreen } from '../screens/auth/OTPVerifyScreen';
+import { UsernameSetupScreen } from '../screens/auth/UsernameSetupScreen';
 import { SpotDetailsScreen } from '../screens/SpotDetailsScreen';
 
 // Navigators
 import { MainTabs } from './MainTabs';
-import { RootStackParamList, AuthStackParamList, AppStackParamList } from './types';
+import { AppStackParamList, AuthStackParamList } from './types';
 
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const AppStack = createNativeStackNavigator<AppStackParamList>();
+const SetupStack = createNativeStackNavigator();
 
 const AuthNavigator = () => {
   return (
     <AuthStack.Navigator screenOptions={{ headerShown: false }}>
-      <AuthStack.Screen name="Welcome" component={WelcomeScreen} />
+      <AuthStack.Screen name="Welcome" component={AuthLandingScreen} />
       <AuthStack.Screen name="Auth" component={AuthScreen} />
+      <AuthStack.Screen name="OTPVerify" component={OTPVerifyScreen} />
     </AuthStack.Navigator>
   );
 };
@@ -38,15 +41,23 @@ const AppStackNavigator = () => {
   );
 };
 
+const SetupNavigator = () => {
+  return (
+    <SetupStack.Navigator screenOptions={{ headerShown: false }}>
+      <SetupStack.Screen name="UsernameSetup" component={UsernameSetupScreen} />
+    </SetupStack.Navigator>
+  );
+};
+
 export const AppNavigator = () => {
-  const { user, isLoading, initialize, isAuthenticated } = useAuthStore();
+  const { user, profile, isLoading, initialize, isAuthenticated, isGuest } = useAuthStore();
   const { loadUserSavesAndVisits, clearUserSavesAndVisits } = useSpotsStore();
 
   useEffect(() => {
     initialize();
   }, [initialize]);
 
-  // Load user bookmarks and visits once logged in
+  // Sync user saves and visits
   useEffect(() => {
     if (user?.id) {
       loadUserSavesAndVisits(user.id);
@@ -63,9 +74,25 @@ export const AppNavigator = () => {
     );
   }
 
+  // Auth Routing Decisions:
+  // 1. If user is logged in, check if profile is complete (username is set)
+  //    - If complete: Route to Main App Stack
+  //    - If incomplete: Route to Username Setup Stack
+  // 2. If guest mode is enabled, route to Main App Stack
+  // 3. Otherwise: Route to Auth onboarding Stack
+
+  const isProfileComplete = !!(profile?.username);
+
   return (
     <NavigationContainer>
-      {isAuthenticated ? <AppStackNavigator /> : <AuthNavigator />}
+      {isAuthenticated
+        ? isProfileComplete
+          ? <AppStackNavigator />
+          : <SetupNavigator />
+        : isGuest
+          ? <AppStackNavigator />
+          : <AuthNavigator />
+      }
     </NavigationContainer>
   );
 };

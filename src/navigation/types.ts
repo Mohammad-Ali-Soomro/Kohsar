@@ -11,7 +11,9 @@ export type MainTabParamList = {
 
 export type AuthStackParamList = {
   Welcome: undefined;
-  Auth: { isSignUpInitial?: boolean } | undefined;
+  Auth: undefined;
+  OTPVerify: { email: string };
+  UsernameSetup: undefined;
 };
 
 export type AppStackParamList = {
@@ -26,6 +28,7 @@ export type RootStackParamList = {
 
 // Screen props helpers
 export type SpotDetailsScreenProps = NativeStackScreenProps<AppStackParamList, 'SpotDetails'>;
+export type OTPVerifyScreenProps = NativeStackScreenProps<AuthStackParamList, 'OTPVerify'>;
 
 export type DiscoverNavigationProp = CompositeNavigationProp<
   BottomTabNavigationProp<MainTabParamList, 'Discover'>,

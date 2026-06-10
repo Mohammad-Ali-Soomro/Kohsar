@@ -21,8 +21,10 @@ import { KButton } from '../components/ui/KButton';
 import { KCard } from '../components/ui/KCard';
 import { useSpotsStore } from '../stores/spotsStore';
 import { useUIStore } from '../stores/uiStore';
+import { useAuthStore } from '../stores/authStore';
 import { supabase } from '../lib/supabase';
 import { Image } from 'expo-image';
+import { KEmptyState } from '../components/ui/KEmptyState';
 
 const CATEGORIES = [
   { id: 'beach', label: 'Beach' },
@@ -45,6 +47,7 @@ export const AddSpotScreen = () => {
   const navigation = useNavigation();
   const { submitSpot } = useSpotsStore();
   const { showToast } = useUIStore();
+  const { isGuest, setGuestMode } = useAuthStore();
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -247,6 +250,23 @@ export const AddSpotScreen = () => {
       setIsSubmitting(false);
     }
   };
+
+  if (isGuest) {
+    return (
+      <View style={styles.container}>
+        <KHeader title="Share Hidden Spot" />
+        <View style={styles.guestContainer}>
+          <KEmptyState
+            title="Sign In Required"
+            subtitle="Become a Kohsar explorer to submit and share hidden spots in Balochistan!"
+            actionLabel="Sign In / Register"
+            onActionPress={() => setGuestMode(false)}
+            iconName="lock-outline"
+          />
+        </View>
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView
@@ -588,5 +608,11 @@ const styles = StyleSheet.create({
     ...Typography.captionBold,
     color: Colors.error,
     marginTop: 4,
+  },
+  guestContainer: {
+    flex: 1,
+    padding: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

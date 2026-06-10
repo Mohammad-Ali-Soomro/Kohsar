@@ -38,7 +38,7 @@ export const SpotDetailsScreen = () => {
 
   const { savedSpotIds, visitedSpotIds, saveSpot, unsaveSpot, markVisited } = useSpotsStore();
   const { showToast } = useUIStore();
-  const { profile } = useAuthStore();
+  const { profile, isGuest, setGuestMode } = useAuthStore();
 
   const [spot, setSpot] = useState<Spot | null>(null);
   const [reviews, setReviews] = useState<any[]>([]);
@@ -87,6 +87,21 @@ export const SpotDetailsScreen = () => {
   }, [spotId]);
 
   const handleToggleSave = async () => {
+    if (isGuest) {
+      Alert.alert(
+        'Explorer Account Required',
+        'Create an explorer profile to save Balochistan’s hidden spots!',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Sign In / Register',
+            onPress: () => setGuestMode(false),
+          },
+        ]
+      );
+      return;
+    }
+
     if (isSaved) {
       await unsaveSpot(spotId);
       showToast('Removed from saved spots.', 'info');
@@ -94,6 +109,24 @@ export const SpotDetailsScreen = () => {
       await saveSpot(spotId);
       showToast('Added to saved spots!', 'success');
     }
+  };
+
+  const handleCheckInPress = () => {
+    if (isGuest) {
+      Alert.alert(
+        'Explorer Account Required',
+        'Create an explorer profile to check in and log visits!',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Sign In / Register',
+            onPress: () => setGuestMode(false),
+          },
+        ]
+      );
+      return;
+    }
+    setCheckInVisible(true);
   };
 
   const handleDirections = () => {
@@ -220,7 +253,7 @@ export const SpotDetailsScreen = () => {
           />
           <KButton
             label={isVisited ? 'Visited' : 'Check In'}
-            onPress={() => setCheckInVisible(true)}
+            onPress={handleCheckInPress}
             variant={isVisited ? 'primary' : 'secondary'}
             size="sm"
             disabled={isVisited}

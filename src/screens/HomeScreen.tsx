@@ -7,6 +7,7 @@ import {
   ScrollView,
   Pressable,
   RefreshControl,
+  Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -21,6 +22,7 @@ import { KEmptyState } from '../components/ui/KEmptyState';
 import { useSpotsStore, Spot } from '../stores/spotsStore';
 import { useUIStore } from '../stores/uiStore';
 import { useLocationStore } from '../stores/locationStore';
+import { useAuthStore } from '../stores/authStore';
 import { AppStackParamList } from '../navigation/types';
 
 type HomeScreenNavigationProp = NativeStackNavigationProp<AppStackParamList>;
@@ -41,6 +43,7 @@ export const HomeScreen = () => {
   const { feedSpots, isLoading, hasMore, fetchFeed, loadMoreFeed, saveSpot, unsaveSpot, savedSpotIds } = useSpotsStore();
   const { selectedCategory, setCategory } = useUIStore();
   const { coords } = useLocationStore();
+  const { isGuest, setGuestMode } = useAuthStore();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -88,6 +91,21 @@ export const HomeScreen = () => {
   };
 
   const toggleSave = async (spotId: string) => {
+    if (isGuest) {
+      Alert.alert(
+        'Explorer Account Required',
+        'Create an explorer profile to save Balochistan’s hidden spots!',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Sign In / Register',
+            onPress: () => setGuestMode(false),
+          },
+        ]
+      );
+      return;
+    }
+
     if (savedSpotIds.has(spotId)) {
       await unsaveSpot(spotId);
     } else {
