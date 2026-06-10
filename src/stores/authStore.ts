@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
 import { User } from '@supabase/supabase-js';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Database } from '../types/database';
 
 type Profile = Database['public']['Tables']['profiles']['Row'];
@@ -11,10 +12,12 @@ interface AuthState {
   isLoading: boolean;
   isAuthenticated: boolean;
   isGuest: boolean;
+  isOnboarded: boolean | null; // null means undetermined/loading
   
   signInWithOtp: (email: string) => Promise<{ error: any }>;
   verifyOtp: (email: string, token: string) => Promise<{ session: any; error: any }>;
   setGuestMode: (enabled: boolean) => void;
+  completeOnboarding: () => Promise<void>;
   signOut: () => Promise<{ error: any }>;
   fetchProfile: (userId: string) => Promise<{ data: Profile | null; error: any }>;
   updateProfile: (updates: Partial<Omit<Profile, 'id' | 'created_at' | 'updated_at'>>) => Promise<{ error: any }>;
@@ -28,25 +31,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isLoading: true,
   isAuthenticated: false,
   isGuest: false,
+  isOnboarded: null,
 
   signInWithOtp: async (email) => {
     set({ isLoading: true });
-    
-    // Request email OTP (One-Time Password)
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        shouldCreateUser: true, // Auto-registers new users
+        shouldCreateUser: true,
       },
     });
-
     set({ isLoading: false });
     return { error };
   },
 
   verifyOtp: async (email, token) => {
     set({ isLoading: true });
-    
     const { data, error } = await supabase.auth.verifyOtp({
       email,
       token,
@@ -62,10 +62,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({
         user: data.user,
         isAuthenticated: true,
-        isGuest: false, // End guest mode if they authenticate
+        isGuest: false,
       });
-      
-      // Fetch user profile details
       const { data: profile } = await get().fetchProfile(data.user.id);
       set({ profile, isLoading: false });
       return { session: data.session, error: null };
@@ -82,6 +80,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       user: null,
       profile: null,
     });
+  },
+
+  completeOnboarding: async () => {
+    try {
+      await AsyncStorage.setItem('kohsar_onboarded', 'true');
+      set({ isOnboarded: true });
+    } catch (err) {
+      console.error('Error saving onboarding status:', err);
+    }
   },
 
   signOut: async () => {
@@ -134,8 +141,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   checkUsernameAvailable: async (username) => {
     if (username.length < 3) return false;
-    
-    // Check if any profile matches this username (case-insensitive)
     const { data, error } = await supabase
       .from('profiles')
       .select('username')
@@ -145,12 +150,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       console.error('Error checking username:', error.message);
       return false;
     }
-
     return (data || []).length === 0;
   },
 
   initialize: async () => {
     set({ isLoading: true });
+
+    // Load onboarding status
+    try {
+      const onboarded = await AsyncStorage.getItem('kohsar_onboarded');
+      set({ isOnboarded: onboarded === 'true' });
+    } catch (err) {
+      console.error('Error reading onboarding status:', err);
+      set({ isOnboarded: false });
+    }
     
     // Get initial session
     const { data: { session } } = await supabase.auth.getSession();
@@ -172,7 +185,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           set({ profile });
         }
       } else {
-        // Only clear auth if guest mode is not active
         if (!get().isGuest) {
           set({ user: null, profile: null, isAuthenticated: false });
         }

@@ -8,6 +8,7 @@ import { Colors } from '../constants/theme';
 import { KLoadingSpinner } from '../components/ui/KLoadingSpinner';
 
 // Screens
+import { OnboardingScreen } from '../screens/onboarding/OnboardingScreen';
 import { AuthLandingScreen } from '../screens/auth/AuthLandingScreen';
 import { AuthScreen } from '../screens/auth/AuthScreen';
 import { OTPVerifyScreen } from '../screens/auth/OTPVerifyScreen';
@@ -18,9 +19,18 @@ import { SpotDetailsScreen } from '../screens/SpotDetailsScreen';
 import { MainTabs } from './MainTabs';
 import { AppStackParamList, AuthStackParamList } from './types';
 
+const OnboardingStack = createNativeStackNavigator();
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const AppStack = createNativeStackNavigator<AppStackParamList>();
 const SetupStack = createNativeStackNavigator();
+
+const OnboardingNavigator = () => {
+  return (
+    <OnboardingStack.Navigator screenOptions={{ headerShown: false }}>
+      <OnboardingStack.Screen name="Onboarding" component={OnboardingScreen} />
+    </OnboardingStack.Navigator>
+  );
+};
 
 const AuthNavigator = () => {
   return (
@@ -50,7 +60,7 @@ const SetupNavigator = () => {
 };
 
 export const AppNavigator = () => {
-  const { user, profile, isLoading, initialize, isAuthenticated, isGuest } = useAuthStore();
+  const { user, profile, isLoading, initialize, isAuthenticated, isGuest, isOnboarded } = useAuthStore();
   const { loadUserSavesAndVisits, clearUserSavesAndVisits } = useSpotsStore();
 
   useEffect(() => {
@@ -66,7 +76,7 @@ export const AppNavigator = () => {
     }
   }, [user?.id, loadUserSavesAndVisits, clearUserSavesAndVisits]);
 
-  if (isLoading) {
+  if (isLoading || isOnboarded === null) {
     return (
       <View style={styles.loadingContainer}>
         <KLoadingSpinner size={50} />
@@ -75,24 +85,30 @@ export const AppNavigator = () => {
   }
 
   // Auth Routing Decisions:
-  // 1. If user is logged in, check if profile is complete (username is set)
+  // 1. If user is NOT onboarded, route to Onboarding Stack
+  // 2. If user is logged in, check if profile is complete (username is set)
   //    - If complete: Route to Main App Stack
   //    - If incomplete: Route to Username Setup Stack
-  // 2. If guest mode is enabled, route to Main App Stack
-  // 3. Otherwise: Route to Auth onboarding Stack
+  // 3. If guest mode is enabled, route to Main App Stack
+  // 4. Otherwise: Route to Auth onboarding Stack
 
   const isProfileComplete = !!(profile?.username);
 
   return (
     <NavigationContainer>
-      {isAuthenticated
-        ? isProfileComplete
-          ? <AppStackNavigator />
-          : <SetupNavigator />
-        : isGuest
-          ? <AppStackNavigator />
-          : <AuthNavigator />
-      }
+      {isOnboarded === false ? (
+        <OnboardingNavigator />
+      ) : isAuthenticated ? (
+        isProfileComplete ? (
+          <AppStackNavigator />
+        ) : (
+          <SetupNavigator />
+        )
+      ) : isGuest ? (
+        <AppStackNavigator />
+      ) : (
+        <AuthNavigator />
+      )}
     </NavigationContainer>
   );
 };
