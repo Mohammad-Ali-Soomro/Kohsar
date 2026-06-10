@@ -14,6 +14,7 @@ import { AuthScreen } from '../screens/auth/AuthScreen';
 import { OTPVerifyScreen } from '../screens/auth/OTPVerifyScreen';
 import { UsernameSetupScreen } from '../screens/auth/UsernameSetupScreen';
 import { SpotDetailsScreen } from '../screens/SpotDetailsScreen';
+import { SubmitSpotScreen } from '../screens/main/SubmitSpotScreen';
 
 // Navigators
 import { MainTabs } from './MainTabs';
@@ -47,6 +48,7 @@ const AppStackNavigator = () => {
     <AppStack.Navigator screenOptions={{ headerShown: false }}>
       <AppStack.Screen name="MainTabs" component={MainTabs} />
       <AppStack.Screen name="SpotDetails" component={SpotDetailsScreen} />
+      <AppStack.Screen name="SubmitSpot" component={SubmitSpotScreen} />
     </AppStack.Navigator>
   );
 };

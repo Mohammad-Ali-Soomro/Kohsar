@@ -10,8 +10,9 @@ import {
   Dimensions,
   Alert,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -30,6 +31,7 @@ import { KEmptyState } from '../../components/ui/KEmptyState';
 import { KLoadingSpinner } from '../../components/ui/KLoadingSpinner';
 import { KCard } from '../../components/ui/KCard';
 import { KBadge } from '../../components/ui/KBadge';
+import { KButton } from '../../components/ui/KButton';
 import { SpotCard } from '../../components/SpotCard';
 import { useSpotsStore, Spot } from '../../stores/spotsStore';
 import { useAuthStore } from '../../stores/authStore';
@@ -37,6 +39,7 @@ import { useLocationStore } from '../../stores/locationStore';
 import { useUIStore } from '../../stores/uiStore';
 import { supabase } from '../../lib/supabase';
 import { AppStackParamList } from '../../navigation/types';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type HomeScreenNavigationProp = NativeStackNavigationProp<AppStackParamList>;
 
@@ -140,6 +143,33 @@ export const HomeScreen = () => {
   const { coords, requestLocationPermission } = useLocationStore();
   const { savedSpotIds, visitedSpotIds, saveSpot, unsaveSpot, markVisited } = useSpotsStore();
   const { showToast } = useUIStore();
+
+  const [draftExists, setDraftExists] = useState(false);
+  const [guestModalVisible, setGuestModalVisible] = useState(false);
+
+  // Check if draft exists on mount/focus
+  const checkDraft = async () => {
+    try {
+      const draft = await AsyncStorage.getItem('@submit_spot_draft');
+      setDraftExists(!!draft);
+    } catch {
+      setDraftExists(false);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      checkDraft();
+    }, [])
+  );
+
+  const handleFABPress = () => {
+    if (isGuest) {
+      setGuestModalVisible(true);
+    } else {
+      navigation.navigate('SubmitSpot' as any);
+    }
+  };
 
   // Feed pagination / loading states
   const [spots, setSpots] = useState<Spot[]>([]);
@@ -512,7 +542,7 @@ export const HomeScreen = () => {
                     : "Balochistan's map is empty — be the first explorer."
                 }
                 actionLabel="Add First Spot"
-                onActionPress={() => navigation.navigate('AddSpot' as any)}
+                onActionPress={handleFABPress}
               />
             ) : null
           }
@@ -525,6 +555,89 @@ export const HomeScreen = () => {
           }
         />
       )}
+
+      {/* Draft Recovery Banner */}
+      {draftExists && (
+        <View style={[styles.draftBanner, Brutalism.border, Brutalism.shadowSmall]}>
+          <Ionicons name="document-text-outline" size={18} color={Colors.sand} />
+          <Text style={[Typography.captionBold, { color: Colors.sand, flex: 1, marginLeft: 6 }]}>
+            You have an unfinished spot submission.
+          </Text>
+          <Pressable
+            onPress={() => {
+              navigation.navigate('SubmitSpot' as any);
+            }}
+            style={styles.draftBannerBtn}
+          >
+            <Text style={[Typography.label, { color: Colors.jetBlack }]}>CONTINUE</Text>
+          </Pressable>
+          <Pressable
+            onPress={async () => {
+              await AsyncStorage.removeItem('@submit_spot_draft');
+              setDraftExists(false);
+            }}
+            style={styles.draftBannerClose}
+          >
+            <Ionicons name="close" size={16} color={Colors.sand} />
+          </Pressable>
+        </View>
+      )}
+
+      {/* Add Spot FAB */}
+      <View style={styles.fabWrapper}>
+        <View style={styles.fabShadow} />
+        <Pressable
+          onPress={handleFABPress}
+          style={[styles.fabCircle, { backgroundColor: Colors.terracotta }]}
+        >
+          <Ionicons name="add" size={28} color={Colors.sand} />
+        </Pressable>
+      </View>
+
+      {/* Guest Intercept Modal */}
+      <Modal
+        visible={guestModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setGuestModalVisible(false)}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setGuestModalVisible(false)}
+        >
+          <Pressable style={[styles.guestSheet, Brutalism.border]}>
+            <View style={styles.dragHandle} />
+            <View style={styles.guestModalContent}>
+              <View style={styles.guestIconCircle}>
+                <Ionicons name="lock-closed" size={32} color={Colors.terracotta} />
+              </View>
+              <Text style={[Typography.heading2, { textAlign: 'center', color: Colors.jetBlack, marginTop: 12 }]}>
+                Explorer Account Required
+              </Text>
+              <Text style={[Typography.body, { textAlign: 'center', color: Colors.deepClay, marginTop: 8, paddingHorizontal: 16 }]}>
+                Become a Kohsar explorer to submit and share hidden spots in Balochistan!
+              </Text>
+
+              <KButton
+                label="Sign In / Register"
+                onPress={() => {
+                  setGuestModalVisible(false);
+                  setGuestMode(false);
+                }}
+                variant="primary"
+                style={{ width: '100%', marginTop: 24 }}
+              />
+
+              <KButton
+                label="Explore as Guest"
+                onPress={() => setGuestModalVisible(false)}
+                variant="ghost"
+                style={{ width: '100%', marginTop: 8 }}
+              />
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 };
@@ -709,5 +822,89 @@ const styles = StyleSheet.create({
     width: '40%',
     backgroundColor: Colors.limestone,
     borderRadius: 2,
+  },
+  fabWrapper: {
+    position: 'absolute',
+    bottom: 24,
+    right: 20,
+    width: 52,
+    height: 52,
+    zIndex: 100,
+  },
+  fabShadow: {
+    position: 'absolute',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: Colors.jetBlack,
+    bottom: 0,
+    right: 0,
+  },
+  fabCircle: {
+    position: 'absolute',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 2.5,
+    borderColor: Colors.jetBlack,
+    alignItems: 'center',
+    justifyContent: 'center',
+    top: 0,
+    left: 0,
+  },
+  draftBanner: {
+    position: 'absolute',
+    bottom: 84,
+    left: 16,
+    right: 16,
+    backgroundColor: Colors.terracotta,
+    padding: 10,
+    borderRadius: Brutalism.borderRadius,
+    flexDirection: 'row',
+    alignItems: 'center',
+    zIndex: 90,
+  },
+  draftBannerBtn: {
+    backgroundColor: Colors.white,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: Brutalism.borderRadius,
+    marginRight: 10,
+  },
+  draftBannerClose: {
+    padding: 2,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(26,26,26,0.5)',
+    justifyContent: 'flex-end',
+  },
+  guestSheet: {
+    backgroundColor: Colors.sand,
+    borderTopLeftRadius: Brutalism.borderRadiusLarge,
+    borderTopRightRadius: Brutalism.borderRadiusLarge,
+    padding: 20,
+    paddingBottom: 34,
+  },
+  dragHandle: {
+    width: 36,
+    height: 4,
+    backgroundColor: Colors.limestone,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 12,
+  },
+  guestModalContent: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+  },
+  guestIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: Colors.limestone,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

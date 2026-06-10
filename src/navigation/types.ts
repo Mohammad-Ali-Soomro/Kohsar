@@ -5,7 +5,6 @@ import { NativeStackNavigationProp, NativeStackScreenProps } from '@react-naviga
 export type MainTabParamList = {
   Discover: undefined;
   Map: undefined;
-  AddSpot: undefined;
   Profile: undefined;
 };
 
@@ -19,6 +18,7 @@ export type AuthStackParamList = {
 export type AppStackParamList = {
   MainTabs: NavigatorScreenParams<MainTabParamList>;
   SpotDetails: { spotId: string };
+  SubmitSpot: undefined;
 };
 
 export type RootStackParamList = {

@@ -3,8 +3,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Brutalism } from '../constants/theme';
 import { HomeScreen } from '../screens/main/HomeScreen';
-import { MapScreen } from '../screens/MapScreen';
-import { AddSpotScreen } from '../screens/AddSpotScreen';
+import { MapScreen } from '../screens/main/MapScreen';
 import { ProfileScreen } from '../screens/ProfileScreen';
 import { MainTabParamList } from './types';
 
@@ -22,8 +21,6 @@ export const MainTabs = () => {
             iconName = focused ? 'compass' : 'compass-outline';
           } else if (route.name === 'Map') {
             iconName = focused ? 'map' : 'map-outline';
-          } else if (route.name === 'AddSpot') {
-            iconName = focused ? 'add-circle' : 'add-circle-outline';
           } else if (route.name === 'Profile') {
             iconName = focused ? 'person' : 'person-outline';
           }
@@ -57,11 +54,6 @@ export const MainTabs = () => {
         name="Map"
         component={MapScreen}
         options={{ tabBarLabel: 'Map View' }}
-      />
-      <Tab.Screen
-        name="AddSpot"
-        component={AddSpotScreen}
-        options={{ tabBarLabel: 'Share Spot' }}
       />
       <Tab.Screen
         name="Profile"
