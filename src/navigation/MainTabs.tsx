@@ -2,7 +2,7 @@ import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Brutalism } from '../constants/theme';
-import { HomeScreen } from '../screens/HomeScreen';
+import { HomeScreen } from '../screens/main/HomeScreen';
 import { MapScreen } from '../screens/MapScreen';
 import { AddSpotScreen } from '../screens/AddSpotScreen';
 import { ProfileScreen } from '../screens/ProfileScreen';
