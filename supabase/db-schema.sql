@@ -1,10 +1,31 @@
 -- Kohsar Supabase Backend Setup Script
 -- Run this in the Supabase SQL Editor
 
--- 1. Enable PostGIS extension for spatial queries
-CREATE EXTENSION IF NOT EXISTS postgis;
+-- 1. Enable PostGIS extension for spatial queries inside the extensions schema
+CREATE SCHEMA IF NOT EXISTS extensions;
+CREATE EXTENSION IF NOT EXISTS postgis SCHEMA extensions;
 
--- 2. Create Profiles Table (extends auth.users)
+-- Set search path for the session so type lookups resolve
+SET search_path = public, extensions;
+
+-- 2. Drop existing components (clean slate reset)
+DROP TABLE IF EXISTS profiles, spots, spot_photos, saves, visits, explorer_badges, reports CASCADE;
+
+DROP FUNCTION IF EXISTS get_nearby_spots(DECIMAL, DECIMAL, INTEGER, INTEGER) CASCADE;
+DROP FUNCTION IF EXISTS check_duplicate_spot(DECIMAL, DECIMAL, INTEGER) CASCADE;
+DROP FUNCTION IF EXISTS handle_new_user() CASCADE;
+DROP FUNCTION IF EXISTS update_save_count() CASCADE;
+DROP FUNCTION IF EXISTS update_visit_count() CASCADE;
+DROP FUNCTION IF EXISTS update_spots_submitted() CASCADE;
+DROP FUNCTION IF EXISTS check_submission_limit(UUID) CASCADE;
+DROP FUNCTION IF EXISTS auto_hide_reported_spot() CASCADE;
+
+DROP POLICY IF EXISTS "Public Access Photos" ON storage.objects;
+DROP POLICY IF EXISTS "Auth Upload Photos" ON storage.objects;
+DROP POLICY IF EXISTS "Public Access Avatars" ON storage.objects;
+DROP POLICY IF EXISTS "Auth Upload Avatars" ON storage.objects;
+
+-- 3. Create Profiles Table (extends auth.users)
 CREATE TABLE IF NOT EXISTS profiles (
   id UUID REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
   username TEXT UNIQUE NOT NULL,
@@ -112,6 +133,7 @@ RETURNS TABLE (
   distance_km DECIMAL, submitted_by UUID, created_at TIMESTAMPTZ
 )
 LANGUAGE sql
+SET search_path = public, extensions
 AS $$
   SELECT 
     s.id, s.name, s.category, s.city,
@@ -135,6 +157,7 @@ CREATE OR REPLACE FUNCTION check_duplicate_spot(
 )
 RETURNS TABLE (id UUID, name TEXT, distance_m INTEGER)
 LANGUAGE sql
+SET search_path = public, extensions
 AS $$
   SELECT 
     s.id, s.name,
@@ -187,16 +210,18 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- Storage RLS Policies
-CREATE POLICY "Public Access Photos" ON storage.objects FOR SELECT USING (bucket_id = 'spot-photos');
+-- Public buckets avatars & spot-photos allow public downloads via their public URL directly (without requiring select policies).
+-- We omit SELECT policies on storage.objects to prevent clients from listing entire bucket folders.
 CREATE POLICY "Auth Upload Photos" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'spot-photos' AND auth.uid() IS NOT NULL);
-CREATE POLICY "Public Access Avatars" ON storage.objects FOR SELECT USING (bucket_id = 'avatars');
 CREATE POLICY "Auth Upload Avatars" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'avatars' AND auth.uid() IS NOT NULL);
 
 -- 12. Triggers
 
 -- Trigger: Auto-create profile on signup
 CREATE OR REPLACE FUNCTION handle_new_user()
-RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER AS $$
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER 
+SET search_path = public, extensions
+AS $$
 BEGIN
   INSERT INTO profiles (id, username, full_name, avatar_url)
   VALUES (
@@ -216,7 +241,9 @@ CREATE TRIGGER on_auth_user_created
 
 -- Trigger: Auto-increment spot save count
 CREATE OR REPLACE FUNCTION update_save_count()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
+RETURNS TRIGGER LANGUAGE plpgsql 
+SET search_path = public, extensions
+AS $$
 BEGIN
   IF TG_OP = 'INSERT' THEN
     UPDATE spots SET save_count = save_count + 1 WHERE id = NEW.spot_id;
@@ -234,7 +261,9 @@ CREATE TRIGGER on_save_change
 
 -- Trigger: Auto-increment visit count
 CREATE OR REPLACE FUNCTION update_visit_count()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
+RETURNS TRIGGER LANGUAGE plpgsql 
+SET search_path = public, extensions
+AS $$
 BEGIN
   UPDATE spots SET visit_count = visit_count + 1 WHERE id = NEW.spot_id;
   UPDATE profiles SET spots_visited = spots_visited + 1 WHERE id = NEW.user_id;
@@ -261,7 +290,9 @@ CREATE TRIGGER on_visit_insert
 
 -- Trigger: Increment spots submitted count
 CREATE OR REPLACE FUNCTION update_spots_submitted()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
+RETURNS TRIGGER LANGUAGE plpgsql 
+SET search_path = public, extensions
+AS $$
 BEGIN
   IF TG_OP = 'INSERT' AND NEW.submitted_by IS NOT NULL THEN
     UPDATE profiles SET spots_submitted = spots_submitted + 1 WHERE id = NEW.submitted_by;
@@ -279,7 +310,9 @@ CREATE TRIGGER on_spot_change
 
 -- 13. Submission limit security check (max 5 spots per 24 hours)
 CREATE OR REPLACE FUNCTION check_submission_limit(user_id UUID)
-RETURNS BOOLEAN LANGUAGE plpgsql SECURITY DEFINER AS $$
+RETURNS BOOLEAN LANGUAGE plpgsql SECURITY DEFINER 
+SET search_path = public, extensions
+AS $$
 DECLARE
   recent_count INTEGER;
 BEGIN
@@ -298,7 +331,9 @@ CREATE POLICY "Auth users submit spots" ON spots FOR INSERT WITH CHECK (
 
 -- 14. Report abuse auto-hide trigger (hide spot if 5+ reports)
 CREATE OR REPLACE FUNCTION auto_hide_reported_spot()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
+RETURNS TRIGGER LANGUAGE plpgsql 
+SET search_path = public, extensions
+AS $$
 DECLARE
   report_count INTEGER;
 BEGIN
@@ -314,4 +349,8 @@ DROP TRIGGER IF EXISTS on_report_change ON reports;
 CREATE TRIGGER on_report_change
   AFTER INSERT ON reports
   FOR EACH ROW EXECUTE FUNCTION auto_hide_reported_spot();
+
+-- Revoke direct execute privileges on security definer functions to prevent RPC abuse
+REVOKE EXECUTE ON FUNCTION handle_new_user() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION check_submission_limit(UUID) FROM PUBLIC, anon;
 
