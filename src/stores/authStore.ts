@@ -35,42 +35,54 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   signInWithOtp: async (email) => {
     set({ isLoading: true });
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: {
-        shouldCreateUser: true,
-      },
-    });
-    set({ isLoading: false });
-    return { error };
+    try {
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: {
+          shouldCreateUser: true,
+        },
+      });
+      set({ isLoading: false });
+      return { error };
+    } catch (err: any) {
+      console.error('signInWithOtp error:', err.message || err);
+      set({ isLoading: false });
+      return { error: err };
+    }
   },
 
   verifyOtp: async (email, token) => {
     set({ isLoading: true });
-    const { data, error } = await supabase.auth.verifyOtp({
-      email,
-      token,
-      type: 'email',
-    });
-
-    if (error) {
-      set({ isLoading: false });
-      return { session: null, error };
-    }
-
-    if (data?.user) {
-      set({
-        user: data.user,
-        isAuthenticated: true,
-        isGuest: false,
+    try {
+      const { data, error } = await supabase.auth.verifyOtp({
+        email,
+        token,
+        type: 'email',
       });
-      const { data: profile } = await get().fetchProfile(data.user.id);
-      set({ profile, isLoading: false });
-      return { session: data.session, error: null };
-    }
 
-    set({ isLoading: false });
-    return { session: null, error: new Error('Verification failed. No user resolved.') };
+      if (error) {
+        set({ isLoading: false });
+        return { session: null, error };
+      }
+
+      if (data?.user) {
+        set({
+          user: data.user,
+          isAuthenticated: true,
+          isGuest: false,
+        });
+        const { data: profile } = await get().fetchProfile(data.user.id);
+        set({ profile, isLoading: false });
+        return { session: data.session, error: null };
+      }
+
+      set({ isLoading: false });
+      return { session: null, error: new Error('Verification failed. No user resolved.') };
+    } catch (err: any) {
+      console.error('verifyOtp error:', err.message || err);
+      set({ isLoading: false });
+      return { session: null, error: err };
+    }
   },
 
   setGuestMode: (enabled) => {
@@ -93,29 +105,46 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   signOut: async () => {
     set({ isLoading: true });
-    const { error } = await supabase.auth.signOut();
-    set({
-      user: null,
-      profile: null,
-      isAuthenticated: false,
-      isGuest: false,
-      isLoading: false,
-    });
-    return { error };
+    try {
+      const { error } = await supabase.auth.signOut();
+      set({
+        user: null,
+        profile: null,
+        isAuthenticated: false,
+        isGuest: false,
+        isLoading: false,
+      });
+      return { error };
+    } catch (err: any) {
+      console.error('signOut error:', err.message || err);
+      set({
+        user: null,
+        profile: null,
+        isAuthenticated: false,
+        isGuest: false,
+        isLoading: false,
+      });
+      return { error: err };
+    }
   },
 
   fetchProfile: async (userId) => {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .maybeSingle();
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .maybeSingle();
 
-    if (error) {
-      console.error('Error fetching profile:', error.message);
-      return { data: null, error };
+      if (error) {
+        console.error('Error fetching profile:', error.message);
+        return { data: null, error };
+      }
+      return { data, error: null };
+    } catch (err: any) {
+      console.error('Exception fetching profile:', err.message || err);
+      return { data: null, error: err };
     }
-    return { data, error: null };
   },
 
   updateProfile: async (updates) => {
@@ -123,34 +152,45 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (!user) return { error: new Error('User not logged in') };
 
     set({ isLoading: true });
-    const { data, error } = await supabase
-      .from('profiles')
-      .update(updates)
-      .eq('id', user.id)
-      .select()
-      .single();
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .update(updates)
+        .eq('id', user.id)
+        .select()
+        .single();
 
-    if (error) {
+      if (error) {
+        set({ isLoading: false });
+        return { error };
+      }
+
+      set({ profile: data, isLoading: false });
+      return { error: null };
+    } catch (err: any) {
+      console.error('updateProfile exception:', err.message || err);
       set({ isLoading: false });
-      return { error };
+      return { error: err };
     }
-
-    set({ profile: data, isLoading: false });
-    return { error: null };
   },
 
   checkUsernameAvailable: async (username) => {
     if (username.length < 3) return false;
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('username')
-      .ilike('username', username);
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('username')
+        .ilike('username', username);
 
-    if (error) {
-      console.error('Error checking username:', error.message);
+      if (error) {
+        console.error('Error checking username:', error.message);
+        return false;
+      }
+      return (data || []).length === 0;
+    } catch (err: any) {
+      console.error('Exception checking username:', err.message || err);
       return false;
     }
-    return (data || []).length === 0;
   },
 
   initialize: async () => {
@@ -165,32 +205,51 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ isOnboarded: false });
     }
     
-    // Get initial session
-    const { data: { session } } = await supabase.auth.getSession();
+    let session = null;
+    try {
+      // Get initial session
+      const sessionResult = await supabase.auth.getSession();
+      session = sessionResult.data?.session || null;
+    } catch (err: any) {
+      console.error('Exception getting initial session:', err.message || err);
+    }
     
-    if (session?.user) {
-      set({ user: session.user, isAuthenticated: true, isGuest: false });
-      const { data: profile } = await get().fetchProfile(session.user.id);
-      set({ profile });
+    try {
+      if (session?.user) {
+        set({ user: session.user, isAuthenticated: true, isGuest: false });
+        const { data: profile } = await get().fetchProfile(session.user.id);
+        set({ profile });
+      }
+    } catch (err: any) {
+      console.error('Exception setting user from initial session:', err.message || err);
     }
 
-    // Set up auth state change listener
-    supabase.auth.onAuthStateChange(async (event, currentSession) => {
-      if (currentSession?.user) {
-        const isDifferentUser = get().user?.id !== currentSession.user.id;
-        set({ user: currentSession.user, isAuthenticated: true, isGuest: false });
-        
-        if (isDifferentUser || !get().profile) {
-          const { data: profile } = await get().fetchProfile(currentSession.user.id);
-          set({ profile });
+    try {
+      // Set up auth state change listener
+      supabase.auth.onAuthStateChange(async (event, currentSession) => {
+        try {
+          if (currentSession?.user) {
+            const isDifferentUser = get().user?.id !== currentSession.user.id;
+            set({ user: currentSession.user, isAuthenticated: true, isGuest: false });
+            
+            if (isDifferentUser || !get().profile) {
+              const { data: profile } = await get().fetchProfile(currentSession.user.id);
+              set({ profile });
+            }
+          } else {
+            if (!get().isGuest) {
+              set({ user: null, profile: null, isAuthenticated: false });
+            }
+          }
+        } catch (innerErr: any) {
+          console.error('Exception in auth state change callback:', innerErr.message || innerErr);
+        } finally {
+          set({ isLoading: false });
         }
-      } else {
-        if (!get().isGuest) {
-          set({ user: null, profile: null, isAuthenticated: false });
-        }
-      }
-      set({ isLoading: false });
-    });
+      });
+    } catch (err: any) {
+      console.error('Exception setting up auth state change listener:', err.message || err);
+    }
 
     set({ isLoading: false });
   },

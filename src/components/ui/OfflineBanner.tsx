@@ -28,8 +28,13 @@ export const OfflineBanner = () => {
     let failedActions: PendingAction[] = [];
 
     // Retrieve current session to verify auth
-    const { data: { session } } = await supabase.auth.getSession();
-    const activeUserId = session?.user?.id;
+    let activeUserId: string | undefined = undefined;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      activeUserId = session?.user?.id;
+    } catch (err: any) {
+      console.error('OfflineBanner: Failed to retrieve session:', err.message || err);
+    }
 
     for (const action of queue) {
       // Security guard: ensure action userId matches currently logged-in user
