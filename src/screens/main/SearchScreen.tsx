@@ -204,6 +204,7 @@ export const SearchScreen = () => {
       setPage(pageNum);
     } catch (err) {
       console.error('Search query failed:', err);
+      setResults([]);
     } finally {
       setLoading(false);
       setLoadingMore(false);
