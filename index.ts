@@ -1,3 +1,15 @@
+// Polyfill global DOMException for React Native fetch aborts
+if (typeof (global as any).DOMException === 'undefined') {
+  class DOMExceptionPolyfill extends Error {
+    name: string;
+    constructor(message?: string, name?: string) {
+      super(message);
+      this.name = name || 'DOMException';
+    }
+  }
+  (global as any).DOMException = DOMExceptionPolyfill;
+}
+
 import { registerRootComponent } from 'expo';
 
 import App from './App';
