@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Brutalism } from '../constants/theme';
 import { HomeScreen } from '../screens/main/HomeScreen';
 import { MapScreen } from '../screens/main/MapScreen';
-import { ProfileScreen } from '../screens/ProfileScreen';
+import { ProfileScreen } from '../screens/main/ProfileScreen';
 import { MainTabParamList } from './types';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();

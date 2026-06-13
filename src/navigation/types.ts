@@ -19,6 +19,7 @@ export type AppStackParamList = {
   MainTabs: NavigatorScreenParams<MainTabParamList>;
   SpotDetails: { spotId: string };
   SubmitSpot: undefined;
+  UserProfile: { userId: string };
 };
 
 export type RootStackParamList = {
@@ -28,6 +29,7 @@ export type RootStackParamList = {
 
 // Screen props helpers
 export type SpotDetailsScreenProps = NativeStackScreenProps<AppStackParamList, 'SpotDetails'>;
+export type UserProfileScreenProps = NativeStackScreenProps<AppStackParamList, 'UserProfile'>;
 export type OTPVerifyScreenProps = NativeStackScreenProps<AuthStackParamList, 'OTPVerify'>;
 
 export type DiscoverNavigationProp = CompositeNavigationProp<

@@ -16,6 +16,8 @@ import {
   TextInput,
 } from 'react-native';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { AppStackParamList } from '../../navigation/types';
 import { Image } from 'expo-image';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Sharing from 'expo-sharing';
@@ -40,10 +42,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { useUIStore } from '../../stores/uiStore';
 import { useLocationStore } from '../../stores/locationStore';
 
-type SpotDetailRouteProp = RouteProp<
-  { SpotDetails: { spotId: string } },
-  'SpotDetails'
->;
+type SpotDetailRouteProp = RouteProp<AppStackParamList, 'SpotDetails'>;
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -143,7 +142,7 @@ const CUSTOM_MAP_STYLE = [
 
 export const SpotDetailScreen = () => {
   const route = useRoute<SpotDetailRouteProp>();
-  const navigation = useNavigation();
+  const navigation = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
   const { spotId } = route.params;
 
   // Global Stores
@@ -1007,7 +1006,10 @@ export const SpotDetailScreen = () => {
           <KSeparator style={styles.sectionSeparator} />
           <Text style={[Typography.label, styles.sectionHeader]}>ADDED BY</Text>
 
-          <View style={styles.submitterRow}>
+          <Pressable
+            onPress={() => spot.submitted_by && navigation.navigate('UserProfile', { userId: spot.submitted_by })}
+            style={styles.submitterRow}
+          >
             {submitter?.avatar_url ? (
               <Image
                 source={{ uri: submitter.avatar_url }}
@@ -1033,7 +1035,9 @@ export const SpotDetailScreen = () => {
                 </Text>
               </View>
             )}
-          </View>
+
+            <Ionicons name="chevron-forward" size={16} color={Colors.deepClay} style={{ marginLeft: 4 }} />
+          </Pressable>
 
           {/* Nearby Spots Section */}
           {nearbySpots.length > 0 && (
