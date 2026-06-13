@@ -13,7 +13,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE, Region, Circle, UrlTile } from 'react-native-maps';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useFocusEffect, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -122,6 +122,7 @@ const CUSTOM_MAP_STYLE = [
 
 export const MapScreen = () => {
   const navigation = useNavigation<MapScreenNavigationProp>();
+  const route = useRoute<any>();
   const mapRef = useRef<MapView>(null);
   
   // Zustand States
@@ -217,6 +218,47 @@ export const MapScreen = () => {
       setIsLoading(false);
     }
   }, [currentRegion]);
+
+  // Handle route params centering and selecting from Spot Detail Screen
+  useEffect(() => {
+    if (route.params?.lat && route.params?.lng) {
+      const { lat, lng, spotId } = route.params;
+      
+      const timer = setTimeout(() => {
+        const targetRegion = {
+          latitude: Number(lat),
+          longitude: Number(lng),
+          latitudeDelta: 0.02,
+          longitudeDelta: 0.02,
+        };
+        setCurrentRegion(targetRegion);
+        mapRef.current?.animateToRegion(targetRegion, 600);
+
+        if (spotId) {
+          const found = mapSpots.find(s => s.id === spotId);
+          if (found) {
+            setSelectedSpot(found);
+            sheetTranslateY.value = withSpring(0, { damping: 15 });
+          } else {
+            // Use temporary placeholder if spots list hasn't loaded yet
+            const tempSpot = {
+              id: spotId,
+              lat: Number(lat),
+              lng: Number(lng),
+              name: route.params?.spotName || 'Selected Spot',
+              category: route.params?.category || 'mountain',
+            };
+            setSelectedSpot(tempSpot);
+            sheetTranslateY.value = withSpring(0, { damping: 15 });
+          }
+        }
+      }, 500);
+
+      // Clear the params so they don't trigger again on subsequent focuses
+      navigation.setParams({ lat: undefined, lng: undefined, spotId: undefined, spotName: undefined, category: undefined } as any);
+      return () => clearTimeout(timer);
+    }
+  }, [route.params, mapSpots]);
 
   // Refresh spots on focus
   useFocusEffect(

@@ -25,6 +25,8 @@ interface KButtonProps {
   disabled?: boolean;
   icon?: React.ReactNode;
   style?: ViewStyle;
+  backgroundColor?: string;
+  textColor?: string;
 }
 
 export const KButton: React.FC<KButtonProps> = ({
@@ -36,6 +38,8 @@ export const KButton: React.FC<KButtonProps> = ({
   disabled = false,
   icon,
   style,
+  backgroundColor,
+  textColor,
 }) => {
   // Shared values for translation coordinates
   const translateX = useSharedValue(0);
@@ -71,18 +75,18 @@ export const KButton: React.FC<KButtonProps> = ({
     switch (variant) {
       case 'primary':
         return {
-          button: { backgroundColor: Colors.terracotta },
-          text: { color: Colors.sand },
+          button: { backgroundColor: backgroundColor || Colors.terracotta },
+          text: { color: textColor || Colors.sand },
         };
       case 'secondary':
         return {
-          button: { backgroundColor: Colors.white },
-          text: { color: Colors.jetBlack },
+          button: { backgroundColor: backgroundColor || Colors.white },
+          text: { color: textColor || Colors.jetBlack },
         };
       case 'ghost':
         return {
           button: { backgroundColor: 'transparent', borderWidth: 0 },
-          text: { color: Colors.jetBlack },
+          text: { color: textColor || Colors.jetBlack },
         };
     }
   };
@@ -148,7 +152,7 @@ export const KButton: React.FC<KButtonProps> = ({
       >
         {loading ? (
           <ActivityIndicator
-            color={variant === 'primary' ? Colors.sand : Colors.terracotta}
+            color={textColor || (variant === 'primary' ? Colors.sand : Colors.terracotta)}
             size="small"
           />
         ) : (
