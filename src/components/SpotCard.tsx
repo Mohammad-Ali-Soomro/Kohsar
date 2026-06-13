@@ -1,7 +1,14 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, Pressable } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withRepeat,
+  withTiming,
+  Easing,
+} from 'react-native-reanimated';
 import { Colors, Typography, Brutalism } from '../constants/theme';
 import { KCard } from './ui/KCard';
 import { KBadge } from './ui/KBadge';
@@ -17,6 +24,7 @@ interface SpotCardProps {
   isSaved: boolean;
   isVisited: boolean;
   distance: string | null;
+  isCached?: boolean;
 }
 
 const getDaysAgoString = (dateString: string) => {
@@ -47,22 +55,51 @@ export const SpotCard: React.FC<SpotCardProps> = ({
   isSaved,
   isVisited,
   distance,
+  isCached = false,
 }) => {
   const daysAgo = getDaysAgoString(spot.created_at);
   const username = spot.profiles?.username || 'anonymous';
 
+  // Shimmer animation state
+  const [imageLoading, setImageLoading] = useState(true);
+  const shimmerOpacity = useSharedValue(0.35);
+
+  useEffect(() => {
+    shimmerOpacity.value = withRepeat(
+      withTiming(0.65, { duration: 750, easing: Easing.bezier(0.25, 0.1, 0.25, 1) }),
+      -1,
+      true
+    );
+  }, []);
+
+  const animatedShimmerStyle = useAnimatedStyle(() => ({
+    opacity: shimmerOpacity.value,
+  }));
+
   return (
-    <KCard onPress={onPress} style={styles.card}>
+    <KCard
+      onPress={onPress}
+      style={styles.card}
+      accessibilityLabel={`${spot.name}, spot in ${spot.city}. Tap to view details`}
+      accessibilityRole="button"
+    >
       {/* Cover Image Container */}
       <View style={styles.imageContainer}>
         {spot.cover_photo_url ? (
-          <Image
-            source={{ uri: spot.cover_photo_url }}
-            style={styles.image}
-            contentFit="cover"
-            transition={200}
-            placeholder={require('../../assets/icon.png')} // Fallback placeholder
-          />
+          <>
+            <Image
+              source={{ uri: spot.cover_photo_url }}
+              style={styles.image}
+              contentFit="cover"
+              transition={200}
+              cachePolicy="memory-disk"
+              onLoadStart={() => setImageLoading(true)}
+              onLoadEnd={() => setImageLoading(false)}
+            />
+            {imageLoading && (
+              <Animated.View style={[styles.imageShimmer, animatedShimmerStyle]} />
+            )}
+          </>
         ) : (
           <View style={styles.imagePlaceholder}>
             <Ionicons name="image-outline" size={48} color={Colors.deepClay} />
@@ -76,6 +113,16 @@ export const SpotCard: React.FC<SpotCardProps> = ({
             color={Colors.saffron}
             size="sm"
             style={styles.explorerBadge}
+          />
+        )}
+
+        {/* Floating Cached Badge */}
+        {isCached && (
+          <KBadge
+            label="CACHED"
+            color={Colors.saffron}
+            size="sm"
+            style={styles.cachedBadge}
           />
         )}
 
@@ -125,7 +172,9 @@ export const SpotCard: React.FC<SpotCardProps> = ({
               Brutalism.borderLight,
               { backgroundColor: isSaved ? Colors.terracotta : Colors.white },
             ]}
-            hitSlop={6}
+            hitSlop={8}
+            accessibilityLabel={isSaved ? `Unsave spot. Current saves: ${spot.save_count || 0}` : `Save spot. Current saves: ${spot.save_count || 0}`}
+            accessibilityRole="button"
           >
             <Ionicons
               name={isSaved ? 'heart' : 'heart-outline'}
@@ -150,7 +199,9 @@ export const SpotCard: React.FC<SpotCardProps> = ({
               Brutalism.borderLight,
               { backgroundColor: isVisited ? Colors.makranTeal : Colors.white },
             ]}
-            hitSlop={6}
+            hitSlop={8}
+            accessibilityLabel={isVisited ? `Mark as unvisited. Current visits: ${spot.visit_count || 0}` : `Mark as visited. Current visits: ${spot.visit_count || 0}`}
+            accessibilityRole="button"
           >
             <MaterialCommunityIcons
               name="foot-print"
@@ -171,7 +222,9 @@ export const SpotCard: React.FC<SpotCardProps> = ({
           <Pressable
             onPress={onSharePress}
             style={[styles.shareButton, Brutalism.borderLight]}
-            hitSlop={6}
+            hitSlop={8}
+            accessibilityLabel="Share spot"
+            accessibilityRole="button"
           >
             <Ionicons name="share-social-outline" size={16} color={Colors.jetBlack} />
           </Pressable>
@@ -214,6 +267,20 @@ const styles = StyleSheet.create({
     top: 10,
     right: 10,
     zIndex: 5,
+  },
+  cachedBadge: {
+    position: 'absolute',
+    top: 10,
+    right: 85,
+    zIndex: 5,
+  },
+  imageShimmer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: Colors.limestone,
   },
   explorerBadge: {
     position: 'absolute',

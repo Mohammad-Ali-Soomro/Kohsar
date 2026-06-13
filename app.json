@@ -2,6 +2,8 @@
   "expo": {
     "name": "Kohsar",
     "slug": "kohsar",
+    "description": "Discover Balochistan's hidden wonders. Explore secret beaches, waterfalls, mountains, and ancient sites added by locals. Be the first Explorer.",
+    "keywords": ["balochistan", "travel", "hidden gems", "pakistan", "discover", "explore", "spots", "nature"],
     "scheme": "kohsar",
     "version": "1.0.0",
     "orientation": "portrait",

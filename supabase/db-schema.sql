@@ -276,3 +276,42 @@ DROP TRIGGER IF EXISTS on_spot_change ON spots;
 CREATE TRIGGER on_spot_change
   AFTER INSERT OR DELETE ON spots
   FOR EACH ROW EXECUTE FUNCTION update_spots_submitted();
+
+-- 13. Submission limit security check (max 5 spots per 24 hours)
+CREATE OR REPLACE FUNCTION check_submission_limit(user_id UUID)
+RETURNS BOOLEAN LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE
+  recent_count INTEGER;
+BEGIN
+  SELECT COUNT(*) INTO recent_count 
+  FROM spots 
+  WHERE submitted_by = user_id AND created_at >= NOW() - INTERVAL '24 hours';
+  RETURN recent_count < 5;
+END;
+$$;
+
+-- Recreate spots insert policy with rate limit check
+DROP POLICY IF EXISTS "Auth users submit spots" ON spots;
+CREATE POLICY "Auth users submit spots" ON spots FOR INSERT WITH CHECK (
+  auth.uid() IS NOT NULL AND check_submission_limit(auth.uid())
+);
+
+-- 14. Report abuse auto-hide trigger (hide spot if 5+ reports)
+CREATE OR REPLACE FUNCTION auto_hide_reported_spot()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+  report_count INTEGER;
+BEGIN
+  SELECT COUNT(*) INTO report_count FROM reports WHERE spot_id = NEW.spot_id;
+  IF report_count >= 5 THEN
+    UPDATE spots SET is_approved = FALSE WHERE id = NEW.spot_id;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS on_report_change ON reports;
+CREATE TRIGGER on_report_change
+  AFTER INSERT ON reports
+  FOR EACH ROW EXECUTE FUNCTION auto_hide_reported_spot();
+

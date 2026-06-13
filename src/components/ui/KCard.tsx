@@ -21,6 +21,9 @@ interface KCardProps {
   shadowColor?: string;
   backgroundColor?: string;
   borderRadius?: number;
+  accessibilityLabel?: string;
+  accessibilityRole?: 'button' | 'imagebutton' | 'link' | 'none';
+  accessibilityHint?: string;
 }
 
 export const KCard: React.FC<KCardProps> = ({
@@ -30,6 +33,9 @@ export const KCard: React.FC<KCardProps> = ({
   shadowColor = Colors.jetBlack,
   backgroundColor = Colors.white,
   borderRadius = Brutalism.borderRadius,
+  accessibilityLabel,
+  accessibilityRole,
+  accessibilityHint,
 }) => {
   const isPressable = typeof onPress === 'function';
 
@@ -69,6 +75,9 @@ export const KCard: React.FC<KCardProps> = ({
       onPressIn={isPressable ? handlePressIn : undefined}
       onPressOut={isPressable ? handlePressOut : undefined}
       style={[styles.container, style]}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole={accessibilityRole}
+      accessibilityHint={accessibilityHint}
     >
       {/* Shadow layer */}
       <View
@@ -99,6 +108,7 @@ export const KCard: React.FC<KCardProps> = ({
     </CardComponent>
   );
 };
+
 
 const styles = StyleSheet.create({
   container: {

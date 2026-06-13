@@ -55,7 +55,7 @@ export const AuthScreen = () => {
     // Edge case: Network offline check
     const netState = await NetInfo.fetch();
     if (!netState.isConnected) {
-      setEmailError('No connection. Check your internet and try again.');
+      setEmailError('Sign in requires internet');
       setSendingCode(false);
       return;
     }

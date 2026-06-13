@@ -1,6 +1,7 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useAuthStore } from '../stores/authStore';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 
 // Screens
 import { OnboardingScreen } from '../screens/onboarding/OnboardingScreen';
@@ -16,12 +17,28 @@ import { RootStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
+// Higher-order component to wrap screens in ErrorBoundary defensively
+const withErrorBoundary = (Component: React.ComponentType<any>) => {
+  return (props: any) => (
+    <ErrorBoundary>
+      <Component {...props} />
+    </ErrorBoundary>
+  );
+};
+
+const OnboardingWithBoundary = withErrorBoundary(OnboardingScreen);
+const AuthLandingWithBoundary = withErrorBoundary(AuthLandingScreen);
+const AuthWithBoundary = withErrorBoundary(AuthScreen);
+const OTPVerifyWithBoundary = withErrorBoundary(OTPVerifyScreen);
+const UsernameSetupWithBoundary = withErrorBoundary(UsernameSetupScreen);
+const MainTabsWithBoundary = withErrorBoundary(MainTabs);
+const SpotDetailsWithBoundary = withErrorBoundary(SpotDetailScreen);
+const SubmitSpotWithBoundary = withErrorBoundary(SubmitSpotScreen);
+const UserProfileWithBoundary = withErrorBoundary(UserProfileScreen);
+
 export const RootStack = () => {
   const { isAuthenticated, isGuest, isOnboarded, profile } = useAuthStore();
   const isProfileComplete = !!(profile?.username);
-
-  // Screen transition settings: standard iOS slide-from-right / Android fade-through
-  // Modal (SpotDetail): slide from bottom
 
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
@@ -29,7 +46,7 @@ export const RootStack = () => {
         // 1. Onboarding flow
         <Stack.Screen
           name="Onboarding"
-          component={OnboardingScreen}
+          component={OnboardingWithBoundary}
           options={{
             animation: 'fade',
           }}
@@ -39,21 +56,21 @@ export const RootStack = () => {
         <>
           <Stack.Screen
             name="AuthLanding"
-            component={AuthLandingScreen}
+            component={AuthLandingWithBoundary}
             options={{
               animation: 'fade',
             }}
           />
           <Stack.Screen
             name="Auth"
-            component={AuthScreen}
+            component={AuthWithBoundary}
             options={{
               animation: 'slide_from_right',
             }}
           />
           <Stack.Screen
             name="OTPVerify"
-            component={OTPVerifyScreen}
+            component={OTPVerifyWithBoundary}
             options={{
               animation: 'slide_from_right',
             }}
@@ -63,7 +80,7 @@ export const RootStack = () => {
         // 3. Username Setup flow
         <Stack.Screen
           name="UsernameSetup"
-          component={UsernameSetupScreen}
+          component={UsernameSetupWithBoundary}
           options={{
             animation: 'fade',
           }}
@@ -73,14 +90,14 @@ export const RootStack = () => {
         <>
           <Stack.Screen
             name="MainTabs"
-            component={MainTabs}
+            component={MainTabsWithBoundary}
             options={{
               animation: 'fade',
             }}
           />
           <Stack.Screen
             name="SpotDetails"
-            component={SpotDetailScreen}
+            component={SpotDetailsWithBoundary}
             options={{
               presentation: 'modal',
               animation: 'slide_from_bottom',
@@ -88,14 +105,14 @@ export const RootStack = () => {
           />
           <Stack.Screen
             name="SubmitSpot"
-            component={SubmitSpotScreen}
+            component={SubmitSpotWithBoundary}
             options={{
               animation: 'slide_from_right',
             }}
           />
           <Stack.Screen
             name="UserProfile"
-            component={UserProfileScreen}
+            component={UserProfileWithBoundary}
             options={{
               animation: 'slide_from_right',
             }}

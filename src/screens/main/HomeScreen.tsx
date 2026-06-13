@@ -24,6 +24,8 @@ import Animated, {
   withRepeat,
   withTiming,
   Easing,
+  useReducedMotion,
+  FadeInDown,
 } from 'react-native-reanimated';
 import { Colors, Typography, Brutalism } from '../../constants/theme';
 import { KSeparator } from '../../components/ui/KSeparator';
@@ -40,6 +42,7 @@ import { useUIStore } from '../../stores/uiStore';
 import { supabase } from '../../lib/supabase';
 import { AppStackParamList } from '../../navigation/types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { cache } from '../../lib/cache';
 
 type HomeScreenNavigationProp = NativeStackNavigationProp<AppStackParamList>;
 
@@ -96,13 +99,23 @@ interface CategoryChipProps {
 
 const CategoryChip: React.FC<CategoryChipProps> = ({ id, label, emoji, isActive, onPress }) => {
   const scale = useSharedValue(1);
+  const reducedMotion = useReducedMotion();
 
   useEffect(() => {
-    scale.value = withSpring(isActive ? 1.08 : 1.0, {
-      damping: 10,
-      stiffness: 220,
-    });
-  }, [isActive]);
+    if (reducedMotion) {
+      scale.value = 1.0;
+      return;
+    }
+    if (isActive) {
+      scale.value = 0.95;
+      scale.value = withSpring(1.0, {
+        damping: 12,
+        stiffness: 200,
+      });
+    } else {
+      scale.value = 1.0;
+    }
+  }, [isActive, reducedMotion]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
@@ -137,6 +150,7 @@ const CategoryChip: React.FC<CategoryChipProps> = ({ id, label, emoji, isActive,
 
 export const HomeScreen = () => {
   const navigation = useNavigation<HomeScreenNavigationProp>();
+  const reducedMotion = useReducedMotion();
   
   // Zustand Store mappings
   const { profile, isGuest, setGuestMode } = useAuthStore();
@@ -146,6 +160,21 @@ export const HomeScreen = () => {
 
   const [draftExists, setDraftExists] = useState(false);
   const [guestModalVisible, setGuestModalVisible] = useState(false);
+  const [isOfflineMode, setIsOfflineMode] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Subscribe to network connection updates
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      setIsOfflineMode(!state.isConnected);
+    });
+    return () => {
+      unsubscribe();
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
 
   // Check if draft exists on mount/focus
   const checkDraft = async () => {
@@ -163,7 +192,12 @@ export const HomeScreen = () => {
     }, [])
   );
 
-  const handleFABPress = () => {
+  const handleFABPress = async () => {
+    const state = await NetInfo.fetch();
+    if (!state.isConnected) {
+      showToast("Internet required to submit", "warning");
+      return;
+    }
     if (isGuest) {
       setGuestModalVisible(true);
     } else {
@@ -191,7 +225,7 @@ export const HomeScreen = () => {
     try {
       const { data, error } = await supabase
         .from('spots')
-        .select('*, profiles(username, full_name, avatar_url)')
+        .select('id, name, category, city, cover_photo_url, save_count, visit_count, lat, lng, created_at, is_explorer_claimed, profiles(username, full_name, avatar_url)')
         .eq('is_approved', true)
         .order('save_count', { ascending: false })
         .limit(3);
@@ -208,7 +242,18 @@ export const HomeScreen = () => {
     // Net status validation
     const netState = await NetInfo.fetch();
     if (!netState.isConnected) {
-      setNetworkError(true);
+      const cachedSpots = await cache.getFeed();
+      if (cachedSpots) {
+        let filtered = cachedSpots;
+        if (categoryId !== 'all') {
+          filtered = cachedSpots.filter((s) => s.category === categoryId);
+        }
+        setSpots(filtered);
+        setHasMore(false);
+        setNetworkError(false); // No network error screen if we have cached spots
+      } else {
+        setNetworkError(true);
+      }
       setLoadingInitial(false);
       setLoadingMore(false);
       setRefreshing(false);
@@ -217,16 +262,23 @@ export const HomeScreen = () => {
     
     setNetworkError(false);
 
+    // Cancel active query if any
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+
     try {
       const startRange = pageNum * ITEMS_PER_PAGE;
       const endRange = startRange + ITEMS_PER_PAGE - 1;
 
       let query = supabase
         .from('spots')
-        .select('*, profiles(username, full_name, avatar_url), spot_photos(*)')
+        .select('id, name, category, city, district, description, cover_photo_url, save_count, visit_count, lat, lng, submitted_by, created_at, is_explorer_claimed, profiles(username, full_name, avatar_url), spot_photos(id, photo_url, display_order)')
         .eq('is_approved', true)
         .order('created_at', { ascending: false })
-        .range(startRange, endRange);
+        .range(startRange, endRange)
+        .abortSignal(abortControllerRef.current.signal);
 
       if (categoryId !== 'all') {
         query = query.eq('category', categoryId as any);
@@ -234,21 +286,42 @@ export const HomeScreen = () => {
 
       const { data, error } = await query;
 
-      if (error) throw error;
+      if (error) {
+        if (error.message !== 'Fetch is aborted') {
+          throw error;
+        }
+        return;
+      }
 
       const newSpots = (data || []) as Spot[];
       
       if (isRefresh || pageNum === 0) {
         setSpots(newSpots);
+        if (categoryId === 'all') {
+          await cache.setFeed(newSpots);
+        }
       } else {
         setSpots((prev) => [...prev, ...newSpots]);
       }
 
+      // Prefetch top 5 cover photo images
+      const top5Urls = newSpots
+        .slice(0, 5)
+        .map((s) => s.cover_photo_url)
+        .filter((url): url is string => !!url);
+      if (top5Urls.length > 0) {
+        Promise.all(top5Urls.map((url) => Image.prefetch(url))).catch((err) => {
+          console.log('Error prefetching images:', err);
+        });
+      }
+
       setHasMore(newSpots.length === ITEMS_PER_PAGE);
       setPage(pageNum);
-    } catch (err) {
-      console.error(err);
-      setNetworkError(true);
+    } catch (err: any) {
+      if (err.name !== 'AbortError' && err.message !== 'Fetch is aborted') {
+        console.error(err);
+        setNetworkError(true);
+      }
     } finally {
       setLoadingInitial(false);
       setLoadingMore(false);
@@ -491,17 +564,25 @@ export const HomeScreen = () => {
           data={spots}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContainer}
-          renderItem={({ item }) => (
-            <SpotCard
-              spot={item}
-              onPress={() => navigation.navigate('SpotDetails', { spotId: item.id })}
-              onSavePress={() => handleSavePress(item)}
-              onVisitPress={() => handleVisitPress(item)}
-              onSharePress={() => handleSharePress(item)}
-              isSaved={savedSpotIds.has(item.id)}
-              isVisited={visitedSpotIds.has(item.id)}
-              distance={getDistanceString(Number(item.lat), Number(item.lng))}
-            />
+          removeClippedSubviews={true}
+          maxToRenderPerBatch={5}
+          windowSize={7}
+          renderItem={({ item, index }) => (
+            <Animated.View
+              entering={reducedMotion ? undefined : FadeInDown.duration(300).delay(index * 100)}
+            >
+              <SpotCard
+                spot={item}
+                onPress={() => navigation.navigate('SpotDetails', { spotId: item.id })}
+                onSavePress={() => handleSavePress(item)}
+                onVisitPress={() => handleVisitPress(item)}
+                onSharePress={() => handleSharePress(item)}
+                isSaved={savedSpotIds.has(item.id)}
+                isVisited={visitedSpotIds.has(item.id)}
+                distance={getDistanceString(Number(item.lat), Number(item.lng))}
+                isCached={isOfflineMode}
+              />
+            </Animated.View>
           )}
           refreshControl={
             <RefreshControl

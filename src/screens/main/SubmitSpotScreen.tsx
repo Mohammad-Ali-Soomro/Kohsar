@@ -37,6 +37,8 @@ import { useUIStore } from '../../stores/uiStore';
 import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase';
 import { AppStackParamList } from '../../navigation/types';
+import { validators, sanitizeInput } from '../../lib/validation';
+import * as Haptics from 'expo-haptics';
 
 type SubmitSpotScreenNavigationProp = NativeStackNavigationProp<AppStackParamList>;
 
@@ -354,6 +356,7 @@ export const SubmitSpotScreen = () => {
   // 3. Step Validations
   const validateStep1 = () => {
     if (photos.length === 0) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       showToast("At least 1 photo is required to submit a spot.", "warning");
       return false;
     }
@@ -362,23 +365,31 @@ export const SubmitSpotScreen = () => {
 
   const validateStep2 = () => {
     const errors: Record<string, string> = {};
-    if (!name.trim()) errors.name = "What do locals call this place?";
-    if (!category) errors.category = "Please select a category";
-    if (!city) errors.city = "Choose the nearest town or city";
-    if (!description.trim() || description.length < 20) {
-      errors.description = "Provide a description (minimum 20 characters)";
+    if (!validators.spotName(name)) {
+      errors.name = "Name must be between 3 and 60 characters.";
+    }
+    if (!category) {
+      errors.category = "Please select a category";
+    }
+    if (!city) {
+      errors.city = "Choose the nearest town or city";
+    }
+    if (!validators.description(description)) {
+      errors.description = "Provide a description between 20 and 500 characters.";
     }
 
     setValidationErrors(errors);
-    return Object.keys(errors).length === 0;
+    const isValid = Object.keys(errors).length === 0;
+    if (!isValid) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    }
+    return isValid;
   };
 
   const validateStep3 = () => {
-    // Check Balochistan bounds
-    const insideLat = lat >= BALOCHISTAN_BOUNDS.minLat && lat <= BALOCHISTAN_BOUNDS.maxLat;
-    const insideLng = lng >= BALOCHISTAN_BOUNDS.minLng && lng <= BALOCHISTAN_BOUNDS.maxLng;
-
-    if (!insideLat || !insideLng) {
+    const inside = validators.isBalochistan(lat, lng);
+    if (!inside) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       showToast("This location appears to be outside Balochistan boundaries.", "error");
       return false;
     }
@@ -505,7 +516,7 @@ export const SubmitSpotScreen = () => {
     // Check internet connection
     const netState = await NetInfo.fetch();
     if (!netState.isConnected) {
-      showToast("No internet connection. Saving draft locally...", "warning");
+      showToast("Internet required to submit", "error");
       await saveDraft();
       navigation.goBack();
       return;
@@ -513,6 +524,27 @@ export const SubmitSpotScreen = () => {
 
     setIsSubmitting(true);
     setFailedUploads([]);
+
+    // Step 0: Check rate limits client-side (max 5 submissions in last 24h)
+    if (user?.id) {
+      try {
+        const { count, error: countError } = await supabase
+          .from('spots')
+          .select('id', { count: 'exact', head: true })
+          .eq('submitted_by', user.id)
+          .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+
+        if (!countError && count !== null && count >= 5) {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          showToast("Daily submission limit reached. Come back tomorrow.", "error");
+          setIsSubmitting(false);
+          return;
+        }
+      } catch (err) {
+        console.error('Failed to verify rate limits:', err);
+      }
+    }
+
     setSubmissionPhase('uploading');
 
     try {
@@ -525,18 +557,24 @@ export const SubmitSpotScreen = () => {
 
       setSubmissionPhase('saving');
 
-      // Step B: Submit spot details
+      // Step B: Submit spot details (sanitized)
       const coverUrl = uploadedUrls[0];
       const extraUrls = uploadedUrls.slice(1);
 
+      const sanitizedName = sanitizeInput(name);
+      const sanitizedDescription = sanitizeInput(description);
+      const sanitizedCity = sanitizeInput(city);
+      const sanitizedDistrict = district ? sanitizeInput(district) : undefined;
+      const sanitizedAccessNotes = accessNotes ? sanitizeInput(accessNotes) : undefined;
+
       const { data: spot, error } = await submitSpot(
         {
-          name,
-          description,
+          name: sanitizedName,
+          description: sanitizedDescription,
           category: category as any,
-          city,
-          district: district || undefined,
-          access_notes: accessNotes || undefined,
+          city: sanitizedCity,
+          district: sanitizedDistrict,
+          access_notes: sanitizedAccessNotes,
           best_season: bestSeasons.join(', ') || undefined,
           difficulty: difficulty as any || undefined,
           lat,
@@ -561,6 +599,7 @@ export const SubmitSpotScreen = () => {
 
       // Clear draft on success
       await AsyncStorage.removeItem('@submit_spot_draft');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       showToast("Spot shared successfully! Welcome explorer.", "success");
 
       // Reset Wizard
@@ -571,6 +610,7 @@ export const SubmitSpotScreen = () => {
       navigation.replace('SpotDetails', { spotId: spot!.id });
     } catch (err: any) {
       console.error(err);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       showToast("Submission failed. Review failed uploads.", "error");
       setIsSubmitting(false);
       setSubmissionPhase('idle');
@@ -1094,6 +1134,33 @@ export const SubmitSpotScreen = () => {
           </View>
         </Pressable>
       </Modal>
+
+      {/* Rotated Close FAB */}
+      <View style={styles.closeFabContainer}>
+        <View style={styles.closeFabShadow} />
+        <Pressable
+          onPress={() => {
+            if (step > 1) {
+              setStep((prev) => (prev - 1) as any);
+            } else {
+              Alert.alert(
+                "Discard Draft?",
+                "Do you want to save a draft before exiting?",
+                [
+                  { text: "Discard", style: "destructive", onPress: () => navigation.goBack() },
+                  { text: "Save Draft", onPress: async () => { await saveDraft(); navigation.goBack(); } }
+                ]
+              );
+            }
+          }}
+          style={styles.closeFabTouchTarget}
+          accessibilityLabel="Close wizard"
+        >
+          <View style={styles.closeFabFace}>
+            <Ionicons name="add" size={24} color={Colors.sand} />
+          </View>
+        </Pressable>
+      </View>
     </KeyboardAvoidingView>
   );
 };
@@ -1357,5 +1424,39 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: Colors.limestone,
+  },
+  closeFabContainer: {
+    position: 'absolute',
+    bottom: 24,
+    right: 20,
+    width: 54,
+    height: 54,
+    zIndex: 999,
+    transform: [{ rotate: '45deg' }],
+  },
+  closeFabShadow: {
+    position: 'absolute',
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: Colors.jetBlack,
+    left: 4,
+    top: 4,
+  },
+  closeFabTouchTarget: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    overflow: 'hidden',
+  },
+  closeFabFace: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: Colors.terracotta,
+    borderWidth: 2.5,
+    borderColor: Colors.jetBlack,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

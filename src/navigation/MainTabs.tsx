@@ -175,6 +175,11 @@ export const MainTabs = () => {
   return (
     <View style={styles.container}>
       <Tab.Navigator
+        screenListeners={{
+          tabPress: () => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          },
+        }}
         screenOptions={({ route }) => ({
           headerShown: false,
           tabBarIcon: ({ color }) => {

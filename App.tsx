@@ -22,6 +22,7 @@ import { useAuthStore } from './src/stores/authStore';
 import { useSpotsStore } from './src/stores/spotsStore';
 import { RootStack } from './src/navigation/RootStack';
 import { KToast } from './src/components/ui/KToast';
+import { OfflineBanner } from './src/components/ui/OfflineBanner';
 import { BalochPattern } from './src/components/ui/BalochPattern';
 import { Colors } from './src/constants/theme';
 
@@ -92,6 +93,7 @@ export default function App() {
     <GestureHandlerRootView style={styles.container}>
       <SafeAreaProvider>
         <StatusBar style="dark" />
+        <OfflineBanner />
         <NavigationContainer>
           <RootStack />
         </NavigationContainer>

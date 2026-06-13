@@ -24,6 +24,7 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
+  useReducedMotion,
 } from 'react-native-reanimated';
 import { Colors, Typography, Brutalism } from '../../constants/theme';
 import { KCard } from '../../components/ui/KCard';
@@ -35,6 +36,7 @@ import { useLocationStore } from '../../stores/locationStore';
 import { useUIStore } from '../../stores/uiStore';
 import { supabase } from '../../lib/supabase';
 import { AppStackParamList } from '../../navigation/types';
+import { cache } from '../../lib/cache';
 
 type MapScreenNavigationProp = NativeStackNavigationProp<AppStackParamList>;
 
@@ -179,9 +181,8 @@ export const MapScreen = () => {
     
     if (!netState.isConnected) {
       setIsOffline(true);
-      const cached = await AsyncStorage.getItem('@map_spots_cache');
-      if (cached) {
-        const spots = JSON.parse(cached);
+      const spots = await cache.getMapPins();
+      if (spots && spots.length > 0) {
         setMapSpots(spots);
         runClustering(spots, currentRegion);
       } else {
@@ -204,13 +205,11 @@ export const MapScreen = () => {
       const spots = data || [];
       setMapSpots(spots);
       runClustering(spots, currentRegion);
-      await AsyncStorage.setItem('@map_spots_cache', JSON.stringify(spots));
+      await cache.setMapPins(spots as any[]);
     } catch (err) {
       console.error(err);
-      // Fallback
-      const cached = await AsyncStorage.getItem('@map_spots_cache');
-      if (cached) {
-        const spots = JSON.parse(cached);
+      const spots = await cache.getMapPins();
+      if (spots) {
         setMapSpots(spots);
         runClustering(spots, currentRegion);
       }
@@ -316,7 +315,19 @@ export const MapScreen = () => {
       }
     }
 
-    setActiveMapItems(finalItems);
+    // Virtualized map pins: only render visible pins/clusters within viewport
+    const visibleItems = finalItems.filter((item) => {
+      const lat = Number(item.lat);
+      const lng = Number(item.lng);
+      return (
+        lat >= region.latitude - region.latitudeDelta * 0.6 &&
+        lat <= region.latitude + region.latitudeDelta * 0.6 &&
+        lng >= region.longitude - region.longitudeDelta * 0.6 &&
+        lng <= region.longitude + region.longitudeDelta * 0.6
+      );
+    });
+
+    setActiveMapItems(visibleItems);
   };
 
   const handleRegionChangeComplete = (region: Region) => {
@@ -335,14 +346,24 @@ export const MapScreen = () => {
     mapRef.current?.animateToRegion(nextRegion, 600);
   };
 
+  const reducedMotion = useReducedMotion();
+
   // Selected Pin details sheet transitions
   useEffect(() => {
     if (selectedSpot) {
-      sheetTranslateY.value = withSpring(0, { damping: 15 });
+      if (reducedMotion) {
+        sheetTranslateY.value = 0;
+      } else {
+        sheetTranslateY.value = withSpring(0, { damping: 15 });
+      }
     } else {
-      sheetTranslateY.value = withSpring(300);
+      if (reducedMotion) {
+        sheetTranslateY.value = 300;
+      } else {
+        sheetTranslateY.value = withSpring(300);
+      }
     }
-  }, [selectedSpot]);
+  }, [selectedSpot, reducedMotion]);
 
   const handleSpotPress = (spot: any) => {
     setSelectedSpot(spot);
@@ -416,7 +437,12 @@ export const MapScreen = () => {
     }
   };
 
-  const handleFABPress = () => {
+  const handleFABPress = async () => {
+    const state = await NetInfo.fetch();
+    if (!state.isConnected) {
+      showToast("Internet required to submit", "warning");
+      return;
+    }
     if (isGuest) {
       setGuestModalVisible(true);
     } else {

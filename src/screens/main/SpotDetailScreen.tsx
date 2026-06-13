@@ -26,6 +26,15 @@ import * as Clipboard from 'expo-clipboard';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import NetInfo from '@react-native-community/netinfo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withRepeat,
+  withTiming,
+  Easing,
+  useReducedMotion,
+} from 'react-native-reanimated';
+import { cache } from '../../lib/cache';
 
 import { Colors, Typography, Brutalism } from '../../constants/theme';
 import { KHeader } from '../../components/ui/KHeader';
@@ -149,17 +158,36 @@ export const SpotDetailScreen = () => {
   const { user, isGuest, setGuestMode } = useAuthStore();
   const { showToast } = useUIStore();
   const { coords } = useLocationStore();
-  const { saveSpot, unsaveSpot, markVisited } = useSpotsStore();
+  const { saveSpot, unsaveSpot, markVisited, savedSpotIds } = useSpotsStore();
 
   // Local Component States
   const [spot, setSpot] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [isOfflineMode, setIsOfflineMode] = useState(false);
+  const [isNotAvailableOffline, setIsNotAvailableOffline] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [isVisited, setIsVisited] = useState(false);
   const [saveCount, setSaveCount] = useState(0);
   const [visitCount, setVisitCount] = useState(0);
   const [nearbySpots, setNearbySpots] = useState<any[]>([]);
+
+  // Glow pulse animation for explorer badge
+  const glowPulse = useSharedValue(0.85);
+
+  useEffect(() => {
+    glowPulse.value = withRepeat(
+      withTiming(1.0, { duration: 1000, easing: Easing.inOut(Easing.ease) }),
+      -1,
+      true
+    );
+  }, []);
+
+  const animatedGlowStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ scale: glowPulse.value }],
+      opacity: (1 - glowPulse.value) * 5 + 0.35,
+    };
+  });
 
   // Carousel indicator index
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
@@ -222,12 +250,13 @@ export const SpotDetailScreen = () => {
 
     if (!netState.isConnected) {
       setIsOfflineMode(true);
-      const cached = await AsyncStorage.getItem(`@spot_cache_${spotId}`);
-      if (cached) {
-        const spotData = JSON.parse(cached);
+      const savedSpots = await cache.getSavedSpots();
+      const spotData = savedSpots.find((s) => s.id === spotId);
+      if (spotData) {
         setSpot(spotData);
         setSaveCount(spotData.save_count || 0);
         setVisitCount(spotData.visit_count || 0);
+        setIsNotAvailableOffline(false);
 
         // Fetch user personal status from local Zustand stores since offline
         const localSaves = useSpotsStore.getState().savedSpotIds;
@@ -236,12 +265,14 @@ export const SpotDetailScreen = () => {
         setIsVisited(localVisits.has(spotId));
       } else {
         setSpot(null);
+        setIsNotAvailableOffline(true);
       }
       setLoading(false);
       return;
     }
 
     setIsOfflineMode(false);
+    setIsNotAvailableOffline(false);
     try {
       // 1. Fetch spot details with submitted_by profile, photos, and explorer badges
       const { data, error } = await supabase
@@ -275,7 +306,7 @@ export const SpotDetailScreen = () => {
       setSaveCount(data.save_count || 0);
       setVisitCount(data.visit_count || 0);
 
-      // Cache data locally
+      // Cache data locally (fallback)
       await AsyncStorage.setItem(`@spot_cache_${spotId}`, JSON.stringify(data));
 
       // 2. Fetch User save/visit status and report status parallel (only if authenticated)
@@ -408,23 +439,31 @@ export const SpotDetailScreen = () => {
       return;
     }
 
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
     const nextSavedState = !isSaved;
+    
+    // Play specific haptics
+    if (nextSavedState) {
+      if (savedSpotIds.size === 0) {
+        // First save
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } else {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }
+    } else {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+
     setIsSaved(nextSavedState);
     setSaveCount((prev) => (nextSavedState ? prev + 1 : Math.max(0, prev - 1)));
 
     const netState = await NetInfo.fetch();
     if (!netState.isConnected) {
-      // Queue action offline
-      try {
-        const queueStr = await AsyncStorage.getItem('@offline_saves_queue');
-        const queue = queueStr ? JSON.parse(queueStr) : {};
-        queue[spotId] = nextSavedState;
-        await AsyncStorage.setItem('@offline_saves_queue', JSON.stringify(queue));
+      if (nextSavedState) {
+        await saveSpot(spotId);
         showToast('Saved locally. Will sync when connected.', 'warning');
-      } catch (err) {
-        console.error(err);
+      } else {
+        await unsaveSpot(spotId);
+        showToast('Removed locally. Will sync when connected.', 'warning');
       }
       return;
     }
@@ -463,13 +502,7 @@ export const SpotDetailScreen = () => {
       return;
     }
 
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
-    const netState = await NetInfo.fetch();
-    if (!netState.isConnected) {
-      showToast('Cannot change visit status while offline.', 'error');
-      return;
-    }
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
     const nextVisitedState = !isVisited;
     setIsVisited(nextVisitedState);
@@ -477,10 +510,17 @@ export const SpotDetailScreen = () => {
       nextVisitedState ? prev + 1 : Math.max(0, prev - 1)
     );
 
+    const netState = await NetInfo.fetch();
+    if (!netState.isConnected) {
+      await markVisited(spotId);
+      showToast('Check-in logged locally. Will sync when online.', 'warning');
+      return;
+    }
+
     try {
       if (nextVisitedState) {
         await markVisited(spotId);
-        showToast('Checked in! Spot marked as visited.', 'success');
+        showToast("Logged your visit! You're an explorer.", 'success');
       } else {
         // Delete visit from database
         const { error } = await supabase
@@ -637,6 +677,26 @@ export const SpotDetailScreen = () => {
     return (
       <View style={[styles.loadingCenter, { backgroundColor: Colors.sand }]}>
         <KLoadingSpinner />
+      </View>
+    );
+  }
+
+  if (isNotAvailableOffline) {
+    return (
+      <View style={styles.errorContainer}>
+        <Ionicons name="cloud-offline" size={64} color={Colors.terracotta} />
+        <Text style={[Typography.heading2, styles.errorTitle]}>
+          Not available offline
+        </Text>
+        <Text style={[Typography.body, styles.errorSubtitle]}>
+          This spot must be saved to view offline.
+        </Text>
+        <KButton
+          label="Go Back"
+          onPress={() => navigation.goBack()}
+          variant="primary"
+          style={styles.errorBtn}
+        />
       </View>
     );
   }
@@ -819,10 +879,20 @@ export const SpotDetailScreen = () => {
 
             {/* Explorer chip */}
             {spot.is_explorer_claimed && (
-              <View style={[styles.explorerChip, Brutalism.borderLight]}>
-                <Text style={styles.explorerChipText}>
-                  ⭐ First explored by @{explorerUsername || username}
-                </Text>
+              <View style={{ position: 'relative', marginTop: 10, alignSelf: 'flex-start' }}>
+                {!useReducedMotion() && (
+                  <Animated.View
+                    style={[
+                      styles.explorerChipGlow,
+                      animatedGlowStyle,
+                    ]}
+                  />
+                )}
+                <View style={[styles.explorerChip, Brutalism.borderLight, { marginTop: 0 }]}>
+                  <Text style={styles.explorerChipText}>
+                    ⭐ First explored by @{explorerUsername || username}
+                  </Text>
+                </View>
               </View>
             )}
 
@@ -1403,8 +1473,17 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 10,
     borderRadius: Brutalism.borderRadius,
-    marginTop: 10,
     alignSelf: 'flex-start',
+  },
+  explorerChipGlow: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: Colors.saffron,
+    borderRadius: Brutalism.borderRadius,
+    zIndex: -1,
   },
   explorerChipText: {
     ...Typography.captionBold,

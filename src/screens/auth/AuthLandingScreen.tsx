@@ -2,11 +2,13 @@ import React from 'react';
 import { StyleSheet, Text, View, Dimensions } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import NetInfo from '@react-native-community/netinfo';
 import { Colors, Typography, Brutalism } from '../../constants/theme';
 import { BalochPattern } from '../../components/ui/BalochPattern';
 import { KButton } from '../../components/ui/KButton';
 import { KCard } from '../../components/ui/KCard';
 import { useAuthStore } from '../../stores/authStore';
+import { useUIStore } from '../../stores/uiStore';
 import { AuthStackParamList } from '../../navigation/types';
 
 type AuthLandingNavProp = NativeStackNavigationProp<AuthStackParamList, 'AuthLanding'>;
@@ -14,9 +16,19 @@ type AuthLandingNavProp = NativeStackNavigationProp<AuthStackParamList, 'AuthLan
 export const AuthLandingScreen = () => {
   const navigation = useNavigation<AuthLandingNavProp>();
   const { setGuestMode } = useAuthStore();
+  const { showToast } = useUIStore();
 
   const handleGuestMode = () => {
     setGuestMode(true);
+  };
+
+  const handleSignInPress = async () => {
+    const netState = await NetInfo.fetch();
+    if (!netState.isConnected) {
+      showToast('Sign in requires internet', 'error');
+      return;
+    }
+    navigation.navigate('Auth');
   };
 
   return (
@@ -48,7 +60,7 @@ export const AuthLandingScreen = () => {
             label="Sign In / Register"
             variant="primary"
             size="lg"
-            onPress={() => navigation.navigate('Auth')}
+            onPress={handleSignInPress}
             style={styles.button}
           />
           

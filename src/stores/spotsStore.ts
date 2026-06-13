@@ -1,6 +1,8 @@
 import { create } from 'zustand';
+import NetInfo from '@react-native-community/netinfo';
 import { supabase } from '../lib/supabase';
 import { Database } from '../types/database';
+import { cache } from '../lib/cache';
 
 export type Spot = Database['public']['Tables']['spots']['Row'] & {
   profiles?: {
@@ -26,8 +28,8 @@ interface SpotsState {
   hasMore: boolean;
   currentPage: number;
   
-  fetchFeed: (category?: string | null, search?: string) => Promise<void>;
-  loadMoreFeed: (category?: string | null, search?: string) => Promise<void>;
+  fetchFeed: (category?: string | null, search?: string, signal?: AbortSignal) => Promise<void>;
+  loadMoreFeed: (category?: string | null, search?: string, signal?: AbortSignal) => Promise<void>;
   fetchNearby: (lat: number, lng: number, radiusKm?: number) => Promise<void>;
   saveSpot: (spotId: string) => Promise<void>;
   unsaveSpot: (spotId: string) => Promise<void>;
@@ -63,15 +65,52 @@ export const useSpotsStore = create<SpotsState>((set, get) => ({
   hasMore: true,
   currentPage: 0,
 
-  fetchFeed: async (category = null, search = '') => {
+  fetchFeed: async (category = null, search = '', signal) => {
     set({ isLoading: true, currentPage: 0, hasMore: true });
     
+    const netState = await NetInfo.fetch();
+    if (!netState.isConnected) {
+      const cached = await cache.getFeed();
+      if (cached) {
+        let filtered = cached;
+        if (category) {
+          filtered = filtered.filter((s) => s.category === category);
+        }
+        if (search) {
+          filtered = filtered.filter(
+            (s) =>
+              s.name.toLowerCase().includes(search.toLowerCase()) ||
+              s.city.toLowerCase().includes(search.toLowerCase()) ||
+              s.description.toLowerCase().includes(search.toLowerCase())
+          );
+        }
+        set({
+          feedSpots: filtered,
+          isLoading: false,
+          hasMore: false,
+        });
+      } else {
+        set({
+          feedSpots: [],
+          isLoading: false,
+          hasMore: false,
+        });
+      }
+      return;
+    }
+
     let query = supabase
       .from('spots')
-      .select('*, profiles(username, full_name, avatar_url), spot_photos(*)')
+      .select(
+        'id, name, category, city, district, description, cover_photo_url, save_count, visit_count, lat, lng, submitted_by, created_at, is_explorer_claimed, profiles(username, full_name, avatar_url), spot_photos(id, photo_url, display_order)'
+      )
       .eq('is_approved', true)
       .order('created_at', { ascending: false })
       .range(0, ITEMS_PER_PAGE - 1);
+
+    if (signal) {
+      query = query.abortSignal(signal);
+    }
 
     if (category) {
       query = query.eq('category', category as any);
@@ -81,26 +120,44 @@ export const useSpotsStore = create<SpotsState>((set, get) => ({
       query = query.or(`name.ilike.%${search}%,city.ilike.%${search}%,description.ilike.%${search}%`);
     }
 
-    const { data, error } = await query;
+    try {
+      const { data, error } = await query;
 
-    if (error) {
-      console.error('Error fetching feed:', error.message);
+      if (error) {
+        if (error.message !== 'Fetch is aborted') {
+          console.error('Error fetching feed:', error.message);
+        }
+        set({ isLoading: false, hasMore: false });
+        return;
+      }
+
+      const spots = (data || []) as Spot[];
+      set({
+        feedSpots: spots,
+        isLoading: false,
+        hasMore: spots.length === ITEMS_PER_PAGE,
+        currentPage: 0,
+      });
+
+      if (!category && !search) {
+        await cache.setFeed(spots);
+      }
+    } catch (err: any) {
+      if (err.name !== 'AbortError' && err.message !== 'Fetch is aborted') {
+        console.error(err);
+      }
       set({ isLoading: false, hasMore: false });
-      return;
     }
-
-    const spots = (data || []) as Spot[];
-    set({
-      feedSpots: spots,
-      isLoading: false,
-      hasMore: spots.length === ITEMS_PER_PAGE,
-      currentPage: 0,
-    });
   },
 
-  loadMoreFeed: async (category = null, search = '') => {
+  loadMoreFeed: async (category = null, search = '', signal) => {
     const { currentPage, hasMore, feedSpots, isLoading } = get();
     if (isLoading || !hasMore) return;
+
+    const netState = await NetInfo.fetch();
+    if (!netState.isConnected) {
+      return;
+    }
 
     set({ isLoading: true });
     const nextPage = currentPage + 1;
@@ -109,10 +166,16 @@ export const useSpotsStore = create<SpotsState>((set, get) => ({
 
     let query = supabase
       .from('spots')
-      .select('*, profiles(username, full_name, avatar_url), spot_photos(*)')
+      .select(
+        'id, name, category, city, district, description, cover_photo_url, save_count, visit_count, lat, lng, submitted_by, created_at, is_explorer_claimed, profiles(username, full_name, avatar_url), spot_photos(id, photo_url, display_order)'
+      )
       .eq('is_approved', true)
       .order('created_at', { ascending: false })
       .range(startRange, endRange);
+
+    if (signal) {
+      query = query.abortSignal(signal);
+    }
 
     if (category) {
       query = query.eq('category', category as any);
@@ -122,27 +185,35 @@ export const useSpotsStore = create<SpotsState>((set, get) => ({
       query = query.or(`name.ilike.%${search}%,city.ilike.%${search}%,description.ilike.%${search}%`);
     }
 
-    const { data, error } = await query;
+    try {
+      const { data, error } = await query;
 
-    if (error) {
-      console.error('Error loading more feed:', error.message);
+      if (error) {
+        if (error.message !== 'Fetch is aborted') {
+          console.error('Error loading more feed:', error.message);
+        }
+        set({ isLoading: false });
+        return;
+      }
+
+      const newSpots = (data || []) as Spot[];
+      set({
+        feedSpots: [...feedSpots, ...newSpots],
+        isLoading: false,
+        hasMore: newSpots.length === ITEMS_PER_PAGE,
+        currentPage: nextPage,
+      });
+    } catch (err: any) {
+      if (err.name !== 'AbortError' && err.message !== 'Fetch is aborted') {
+        console.error(err);
+      }
       set({ isLoading: false });
-      return;
     }
-
-    const newSpots = (data || []) as Spot[];
-    set({
-      feedSpots: [...feedSpots, ...newSpots],
-      isLoading: false,
-      hasMore: newSpots.length === ITEMS_PER_PAGE,
-      currentPage: nextPage,
-    });
   },
 
   fetchNearby: async (lat, lng, radiusKm = 50) => {
     set({ isLoading: true });
     
-    // Call PostGIS RPC function
     const { data, error } = await supabase.rpc('get_nearby_spots', {
       user_lat: lat,
       user_lng: lng,
@@ -171,16 +242,39 @@ export const useSpotsStore = create<SpotsState>((set, get) => ({
     newSaved.add(spotId);
     set({ savedSpotIds: newSaved });
 
+    const netState = await NetInfo.fetch();
+    if (!netState.isConnected) {
+      // Offline: enqueue action
+      await cache.enqueueAction('save', spotId, user.id);
+      
+      // Save full spot data to local cache if we can find it in store
+      const spot = get().feedSpots.find((s) => s.id === spotId);
+      if (spot) {
+        await cache.addSavedSpot(spot);
+      }
+      return;
+    }
+
     const { error } = await supabase
       .from('saves')
       .insert({ user_id: user.id, spot_id: spotId });
 
     if (error) {
       console.error('Error saving spot:', error.message);
-      // Revert on error
       const revertedSaved = new Set(get().savedSpotIds);
       revertedSaved.delete(spotId);
       set({ savedSpotIds: revertedSaved });
+    } else {
+      // Online success: cache it
+      const { data: fullSpot } = await supabase
+        .from('spots')
+        .select('id, name, category, city, district, description, cover_photo_url, save_count, visit_count, lat, lng, submitted_by, created_at, is_explorer_claimed, profiles(username, full_name, avatar_url), spot_photos(id, photo_url, display_order)')
+        .eq('id', spotId)
+        .single();
+      
+      if (fullSpot) {
+        await cache.addSavedSpot(fullSpot as Spot);
+      }
     }
   },
 
@@ -193,6 +287,14 @@ export const useSpotsStore = create<SpotsState>((set, get) => ({
     newSaved.delete(spotId);
     set({ savedSpotIds: newSaved });
 
+    const netState = await NetInfo.fetch();
+    if (!netState.isConnected) {
+      // Offline: enqueue action
+      await cache.enqueueAction('unsave', spotId, user.id);
+      await cache.removeSavedSpot(spotId);
+      return;
+    }
+
     const { error } = await supabase
       .from('saves')
       .delete()
@@ -201,10 +303,11 @@ export const useSpotsStore = create<SpotsState>((set, get) => ({
 
     if (error) {
       console.error('Error unsaving spot:', error.message);
-      // Revert on error
       const revertedSaved = new Set(get().savedSpotIds);
       revertedSaved.add(spotId);
       set({ savedSpotIds: revertedSaved });
+    } else {
+      await cache.removeSavedSpot(spotId);
     }
   },
 
@@ -217,6 +320,13 @@ export const useSpotsStore = create<SpotsState>((set, get) => ({
     newVisited.add(spotId);
     set({ visitedSpotIds: newVisited });
 
+    const netState = await NetInfo.fetch();
+    if (!netState.isConnected) {
+      // Offline: enqueue action
+      await cache.enqueueAction('visit', spotId, user.id);
+      return;
+    }
+
     const { error } = await supabase
       .from('visits')
       .insert({
@@ -227,7 +337,6 @@ export const useSpotsStore = create<SpotsState>((set, get) => ({
 
     if (error) {
       console.error('Error marking spot visited:', error.message);
-      // Revert on error
       const revertedVisited = new Set(get().visitedSpotIds);
       revertedVisited.delete(spotId);
       set({ visitedSpotIds: revertedVisited });
@@ -240,7 +349,6 @@ export const useSpotsStore = create<SpotsState>((set, get) => ({
 
     set({ isLoading: true });
 
-    // Format location as PostGIS POINT geography string
     const pointWkt = `POINT(${spotData.lng} ${spotData.lat})`;
 
     const { data: spot, error: spotError } = await supabase
@@ -249,7 +357,7 @@ export const useSpotsStore = create<SpotsState>((set, get) => ({
         ...spotData,
         submitted_by: user.id,
         location: pointWkt,
-        is_approved: true, // Default to true as per request, can be moderated later
+        is_approved: true,
       })
       .select('*, profiles(username, full_name, avatar_url)')
       .single();
@@ -285,7 +393,6 @@ export const useSpotsStore = create<SpotsState>((set, get) => ({
       spot_photos: photoRows,
     };
 
-    // Append to feed list at start
     set((state) => ({
       feedSpots: [fullSpot, ...state.feedSpots],
       isLoading: false,
@@ -295,20 +402,29 @@ export const useSpotsStore = create<SpotsState>((set, get) => ({
   },
 
   loadUserSavesAndVisits: async (userId) => {
-    // Fetch user saves
+    const netState = await NetInfo.fetch();
+    if (!netState.isConnected) {
+      // Offline: load saves from local cache
+      const cachedSpots = await cache.getSavedSpots();
+      const savedIds = new Set(cachedSpots.map((s) => s.id));
+      set({ savedSpotIds: savedIds });
+      return;
+    }
+
     const { data: saves, error: savesError } = await supabase
       .from('saves')
-      .select('spot_id')
+      .select('spot:spots(id, name, category, city, district, description, cover_photo_url, save_count, visit_count, lat, lng, submitted_by, created_at, is_explorer_claimed, profiles(username, full_name, avatar_url), spot_photos(id, photo_url, display_order))')
       .eq('user_id', userId);
 
     if (savesError) {
       console.error('Error loading saves:', savesError.message);
-    } else {
-      const savedIds = new Set(saves.map((s) => s.spot_id));
+    } else if (saves) {
+      const spots = saves.map((s: any) => s.spot).filter(Boolean) as Spot[];
+      await cache.setSavedSpots(spots);
+      const savedIds = new Set(spots.map((s) => s.id));
       set({ savedSpotIds: savedIds });
     }
 
-    // Fetch user visits
     const { data: visits, error: visitsError } = await supabase
       .from('visits')
       .select('spot_id')
