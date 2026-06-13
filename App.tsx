@@ -1,6 +1,14 @@
 import 'react-native-url-polyfill/auto';
 import React, { useEffect } from 'react';
-import { StyleSheet, View, Text } from 'react-native';
+import { StyleSheet, View, Text, LogBox } from 'react-native';
+
+// Suppress transient promise rejections (e.g. cancelled/aborted fetches) from displaying as redboxes
+LogBox.ignoreLogs([
+  'Unhandled Promise Rejection',
+  'DOMException',
+  'Aborted',
+  'Search query failed',
+]);
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StatusBar } from 'expo-status-bar';

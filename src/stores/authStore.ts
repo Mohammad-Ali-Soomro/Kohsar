@@ -86,6 +86,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   setGuestMode: (enabled) => {
+    if (enabled) {
+      supabase.auth.signOut().catch((err) => {
+        console.warn('Sign out in guest mode failed:', err);
+      });
+    }
     set({
       isGuest: enabled,
       isAuthenticated: false,
