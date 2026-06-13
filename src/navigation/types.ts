@@ -5,6 +5,7 @@ import { NativeStackNavigationProp, NativeStackScreenProps } from '@react-naviga
 export type MainTabParamList = {
   Discover: undefined;
   Map: undefined;
+  Search: undefined;
   Profile: undefined;
 };
 

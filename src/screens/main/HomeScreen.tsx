@@ -142,7 +142,7 @@ export const HomeScreen = () => {
   const { profile, isGuest, setGuestMode } = useAuthStore();
   const { coords, requestLocationPermission } = useLocationStore();
   const { savedSpotIds, visitedSpotIds, saveSpot, unsaveSpot, markVisited } = useSpotsStore();
-  const { showToast } = useUIStore();
+  const { showToast, selectedCategory, setCategory } = useUIStore();
 
   const [draftExists, setDraftExists] = useState(false);
   const [guestModalVisible, setGuestModalVisible] = useState(false);
@@ -290,6 +290,15 @@ export const HomeScreen = () => {
       fetchFeedSpots(0, categoryId);
     }, 300);
   };
+
+  useFocusEffect(
+    useCallback(() => {
+      if (selectedCategory) {
+        handleCategoryChange(selectedCategory);
+        setCategory(null);
+      }
+    }, [selectedCategory])
+  );
 
   // Helper to calculate distance in km using coords
   const getDistanceString = (spotLat: number, spotLng: number) => {
