@@ -9,31 +9,28 @@ export type MainTabParamList = {
   Profile: undefined;
 };
 
-export type AuthStackParamList = {
-  Welcome: undefined;
+export type RootStackParamList = {
+  Onboarding: undefined;
+  AuthLanding: undefined;
   Auth: undefined;
   OTPVerify: { email: string };
   UsernameSetup: undefined;
-};
-
-export type AppStackParamList = {
-  MainTabs: NavigatorScreenParams<MainTabParamList>;
+  MainTabs: NavigatorScreenParams<MainTabParamList> | undefined;
   SpotDetails: { spotId: string };
   SubmitSpot: undefined;
   UserProfile: { userId: string };
 };
 
-export type RootStackParamList = {
-  AuthStack: NavigatorScreenParams<AuthStackParamList>;
-  AppStack: NavigatorScreenParams<AppStackParamList>;
-};
+// Aliases for legacy stack parameters to maintain backward compatibility
+export type AuthStackParamList = RootStackParamList;
+export type AppStackParamList = RootStackParamList;
 
 // Screen props helpers
-export type SpotDetailsScreenProps = NativeStackScreenProps<AppStackParamList, 'SpotDetails'>;
-export type UserProfileScreenProps = NativeStackScreenProps<AppStackParamList, 'UserProfile'>;
-export type OTPVerifyScreenProps = NativeStackScreenProps<AuthStackParamList, 'OTPVerify'>;
+export type SpotDetailsScreenProps = NativeStackScreenProps<RootStackParamList, 'SpotDetails'>;
+export type UserProfileScreenProps = NativeStackScreenProps<RootStackParamList, 'UserProfile'>;
+export type OTPVerifyScreenProps = NativeStackScreenProps<RootStackParamList, 'OTPVerify'>;
 
 export type DiscoverNavigationProp = CompositeNavigationProp<
   BottomTabNavigationProp<MainTabParamList, 'Discover'>,
-  NativeStackNavigationProp<AppStackParamList>
+  NativeStackNavigationProp<RootStackParamList>
 >;

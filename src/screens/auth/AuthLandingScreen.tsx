@@ -9,7 +9,7 @@ import { KCard } from '../../components/ui/KCard';
 import { useAuthStore } from '../../stores/authStore';
 import { AuthStackParamList } from '../../navigation/types';
 
-type AuthLandingNavProp = NativeStackNavigationProp<AuthStackParamList, 'Welcome'>;
+type AuthLandingNavProp = NativeStackNavigationProp<AuthStackParamList, 'AuthLanding'>;
 
 export const AuthLandingScreen = () => {
   const navigation = useNavigation<AuthLandingNavProp>();

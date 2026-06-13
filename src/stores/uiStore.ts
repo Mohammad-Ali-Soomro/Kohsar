@@ -25,7 +25,7 @@ export const useUIStore = create<UIState>((set) => ({
   showToast: (message, type = 'info') => {
     set({ toastMessage: { message, type } });
     
-    // Auto-clear toast after 3 seconds
+    // Auto-clear toast after 2.5 seconds
     setTimeout(() => {
       set((state) => {
         if (state.toastMessage?.message === message) {
@@ -33,7 +33,7 @@ export const useUIStore = create<UIState>((set) => ({
         }
         return {};
       });
-    }, 3000);
+    }, 2500);
   },
 
   clearToast: () => set({ toastMessage: null }),

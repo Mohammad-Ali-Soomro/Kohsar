@@ -1,9 +1,10 @@
 import React, { useEffect } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, Text } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
+import { NavigationContainer } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
 import {
   SpaceGrotesk_400Regular,
@@ -16,10 +17,15 @@ import {
   Inter_500Medium,
   Inter_600SemiBold,
 } from '@expo-google-fonts/inter';
-import { AppNavigator } from './src/navigation/AppNavigator';
+
+import { useAuthStore } from './src/stores/authStore';
+import { useSpotsStore } from './src/stores/spotsStore';
+import { RootStack } from './src/navigation/RootStack';
+import { KToast } from './src/components/ui/KToast';
+import { BalochPattern } from './src/components/ui/BalochPattern';
 import { Colors } from './src/constants/theme';
 
-// Keep the splash screen visible while we fetch resources
+// Keep the native splash screen visible while we resolve initial assets and auth
 SplashScreen.preventAutoHideAsync().catch(() => {
   /* reloading app in dev mode might cause this to throw, ignore */
 });
@@ -35,22 +41,61 @@ export default function App() {
     'Inter-SemiBold': Inter_600SemiBold,
   });
 
+  const { user, isLoading: authLoading, initialize, isOnboarded } = useAuthStore();
+  const { loadUserSavesAndVisits, clearUserSavesAndVisits } = useSpotsStore();
+
   useEffect(() => {
-    if (fontsLoaded || fontError) {
-      // Hide splash screen immediately when fonts are resolved
+    initialize();
+  }, [initialize]);
+
+  // Sync user saves and visits from AsyncStorage
+  useEffect(() => {
+    if (user?.id) {
+      loadUserSavesAndVisits(user.id);
+    } else {
+      clearUserSavesAndVisits();
+    }
+  }, [user?.id, loadUserSavesAndVisits, clearUserSavesAndVisits]);
+
+  const isReady = (fontsLoaded || fontError) && !authLoading && isOnboarded !== null;
+
+  useEffect(() => {
+    if (isReady) {
       SplashScreen.hideAsync().catch(() => {});
     }
-  }, [fontsLoaded, fontError]);
+  }, [isReady]);
 
-  if (!fontsLoaded && !fontError) {
-    return null; // Keep splash screen visible
+  if (!isReady) {
+    // Mimic the Splash Screen design as a React Native fallback component
+    const hasSpaceGrotesk = fontsLoaded || fontError;
+    return (
+      <View style={styles.splashContainer}>
+        <Text
+          style={[
+            styles.splashText,
+            hasSpaceGrotesk ? { fontFamily: 'SpaceGrotesk-Bold' } : { fontWeight: 'bold' },
+          ]}
+        >
+          KOHSAR
+        </Text>
+        <BalochPattern
+          height={15}
+          width={120}
+          patternColor={Colors.terracotta}
+          backgroundColor={Colors.sand}
+        />
+      </View>
+    );
   }
 
   return (
     <GestureHandlerRootView style={styles.container}>
       <SafeAreaProvider>
         <StatusBar style="dark" />
-        <AppNavigator />
+        <NavigationContainer>
+          <RootStack />
+        </NavigationContainer>
+        <KToast />
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
@@ -59,5 +104,17 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  splashContainer: {
+    flex: 1,
+    backgroundColor: Colors.sand,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 16,
+  },
+  splashText: {
+    fontSize: 42,
+    color: Colors.jetBlack,
+    letterSpacing: 2,
   },
 });
