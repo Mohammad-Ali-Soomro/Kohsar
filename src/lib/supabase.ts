@@ -10,6 +10,23 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase env variables');
 }
 
+const customFetch = async (url: RequestInfo | URL, options?: RequestInit) => {
+  try {
+    const response = await fetch(url, options);
+    return response;
+  } catch (err: any) {
+    if (err.name === 'AbortError' || err.message === 'Aborted') {
+      console.warn('Supabase fetch aborted, suppressing to prevent crash.');
+      return new Response(JSON.stringify({ error: 'Aborted' }), {
+        status: 499,
+        statusText: 'Client Closed Request',
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    throw err;
+  }
+};
+
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {
     storage: AsyncStorage,
@@ -18,6 +35,6 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: false,
   },
   global: {
-    fetch: fetch.bind(globalThis),
+    fetch: customFetch,
   },
 });
