@@ -16,12 +16,10 @@ const customFetch = async (url: RequestInfo | URL, options?: RequestInit) => {
     return response;
   } catch (err: any) {
     if (err.name === 'AbortError' || err.message === 'Aborted') {
-      console.warn('Supabase fetch aborted, suppressing to prevent crash.');
-      return new Response(JSON.stringify({ error: 'Aborted' }), {
-        status: 499,
-        statusText: 'Client Closed Request',
-        headers: { 'Content-Type': 'application/json' },
-      });
+      console.warn('Supabase fetch aborted cleanly.');
+      const cleanError = new Error('Aborted');
+      cleanError.name = 'AbortError';
+      throw cleanError;
     }
     throw err;
   }
