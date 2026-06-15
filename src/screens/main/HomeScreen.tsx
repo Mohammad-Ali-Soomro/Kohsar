@@ -48,6 +48,20 @@ type HomeScreenNavigationProp = NativeStackNavigationProp<AppStackParamList>;
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
+// Recognises a cancelled request across the different shapes it can take: a
+// thrown DOMException/AbortError, postgrest's converted error object (whose
+// message is "AbortError: Aborted" and which carries no `name`), or a signal
+// that has already been aborted.
+const isAbortError = (err: any, signal?: AbortSignal): boolean => {
+  if (signal?.aborted) return true;
+  if (!err) return false;
+  return (
+    err.name === 'AbortError' ||
+    err.code === 'ABORT_ERR' ||
+    /abort/i.test(err.message ?? '')
+  );
+};
+
 const CATEGORIES = [
   { id: 'all', label: 'All', emoji: '🏖️' },
   { id: 'beach', label: 'Beach', emoji: '🏖️' },
@@ -173,6 +187,9 @@ export const HomeScreen = () => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
     };
   }, []);
 
@@ -266,7 +283,8 @@ export const HomeScreen = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
-    abortControllerRef.current = new AbortController();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
     try {
       const startRange = pageNum * ITEMS_PER_PAGE;
@@ -278,7 +296,7 @@ export const HomeScreen = () => {
         .eq('is_approved', true)
         .order('created_at', { ascending: false })
         .range(startRange, endRange)
-        .abortSignal(abortControllerRef.current.signal);
+        .abortSignal(controller.signal);
 
       if (categoryId !== 'all') {
         query = query.eq('category', categoryId as any);
@@ -287,10 +305,11 @@ export const HomeScreen = () => {
       const { data, error } = await query;
 
       if (error) {
-        if (error.message !== 'Fetch is aborted') {
-          throw error;
+        // A cancelled request is not a real failure; ignore it silently.
+        if (isAbortError(error, controller.signal)) {
+          return;
         }
-        return;
+        throw error;
       }
 
       const newSpots = (data || []) as Spot[];
@@ -318,14 +337,20 @@ export const HomeScreen = () => {
       setHasMore(newSpots.length === ITEMS_PER_PAGE);
       setPage(pageNum);
     } catch (err: any) {
-      if (err.name !== 'AbortError' && err.message !== 'Fetch is aborted') {
+      // Ignore cancelled requests (category switch, pagination, unmount, or
+      // React StrictMode's dev double-mount); only surface genuine failures.
+      if (!isAbortError(err, controller.signal)) {
         console.error(err);
         setNetworkError(true);
       }
     } finally {
-      setLoadingInitial(false);
-      setLoadingMore(false);
-      setRefreshing(false);
+      // A request that was superseded by a newer one (its signal is aborted)
+      // must not clear the loading flags the newer request just set.
+      if (!controller.signal.aborted) {
+        setLoadingInitial(false);
+        setLoadingMore(false);
+        setRefreshing(false);
+      }
     }
   };
 

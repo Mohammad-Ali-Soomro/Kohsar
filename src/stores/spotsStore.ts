@@ -56,6 +56,20 @@ interface SpotsState {
 
 const ITEMS_PER_PAGE = 10;
 
+// Recognises a cancelled request across the different shapes it can take: a
+// thrown DOMException/AbortError, postgrest's converted error object (whose
+// message is "AbortError: Aborted" and which carries no `name`), or a signal
+// that has already been aborted.
+const isAbortError = (err: any, signal?: AbortSignal): boolean => {
+  if (signal?.aborted) return true;
+  if (!err) return false;
+  return (
+    err.name === 'AbortError' ||
+    err.code === 'ABORT_ERR' ||
+    /abort/i.test(err.message ?? '')
+  );
+};
+
 export const useSpotsStore = create<SpotsState>((set, get) => ({
   feedSpots: [],
   nearbySpots: [],
@@ -124,7 +138,7 @@ export const useSpotsStore = create<SpotsState>((set, get) => ({
       const { data, error } = await query;
 
       if (error) {
-        if (error.message !== 'Fetch is aborted') {
+        if (!isAbortError(error, signal)) {
           console.error('Error fetching feed:', error.message);
         }
         set({ isLoading: false, hasMore: false });
@@ -143,7 +157,7 @@ export const useSpotsStore = create<SpotsState>((set, get) => ({
         await cache.setFeed(spots);
       }
     } catch (err: any) {
-      if (err.name !== 'AbortError' && err.message !== 'Fetch is aborted') {
+      if (!isAbortError(err, signal)) {
         console.error(err);
       }
       set({ isLoading: false, hasMore: false });
@@ -189,7 +203,7 @@ export const useSpotsStore = create<SpotsState>((set, get) => ({
       const { data, error } = await query;
 
       if (error) {
-        if (error.message !== 'Fetch is aborted') {
+        if (!isAbortError(error, signal)) {
           console.error('Error loading more feed:', error.message);
         }
         set({ isLoading: false });
@@ -204,7 +218,7 @@ export const useSpotsStore = create<SpotsState>((set, get) => ({
         currentPage: nextPage,
       });
     } catch (err: any) {
-      if (err.name !== 'AbortError' && err.message !== 'Fetch is aborted') {
+      if (!isAbortError(err, signal)) {
         console.error(err);
       }
       set({ isLoading: false });

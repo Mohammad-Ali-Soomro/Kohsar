@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View, Pressable, ActivityIndicator } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,12 +17,16 @@ export const OfflineBanner = () => {
   const { loadUserSavesAndVisits } = useSpotsStore();
   const [isOffline, setIsOffline] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const wasOfflineRef = useRef(false);
+  const syncingRef = useRef(false);
 
   // Sync actions from cache pending queue
   const syncPendingQueue = async () => {
+    if (syncingRef.current) return; // Guard against concurrent syncs
     const queue = await cache.getPendingQueue();
     if (queue.length === 0) return;
 
+    syncingRef.current = true;
     setSyncing(true);
     let successCount = 0;
     let failedActions: PendingAction[] = [];
@@ -86,9 +90,9 @@ export const OfflineBanner = () => {
     await cache.setPendingQueue(failedActions);
 
     if (successCount > 0) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       showToast(`Offline actions synced successfully!`, 'success');
-      
+
       // Reload user saves/visits to reflect newly synced actions in store
       if (activeUserId) {
         loadUserSavesAndVisits(activeUserId);
@@ -99,24 +103,31 @@ export const OfflineBanner = () => {
     }
 
     setSyncing(false);
+    syncingRef.current = false;
   };
 
   useEffect(() => {
-    // Subscribe to network connection updates
+    // Subscribe to network connection updates. We deliberately depend on nothing so the
+    // subscription is created once on mount and torn down on unmount. The previous offline
+    // state is tracked via a ref so we never re-subscribe just to capture it.
     const unsubscribe = NetInfo.addEventListener((state) => {
       const isConnected = state.isConnected ?? true;
-      const wasOffline = isOffline;
-      
+      const wasOffline = wasOfflineRef.current;
+
+      wasOfflineRef.current = !isConnected;
       setIsOffline(!isConnected);
 
       // Reconnected! Trigger pending queue sync
       if (isConnected && wasOffline) {
-        syncPendingQueue();
+        syncPendingQueue().catch((err) => {
+          console.error('OfflineBanner: pending queue sync failed:', err?.message || err);
+        });
       }
     });
 
     return () => unsubscribe();
-  }, [isOffline]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (!isOffline) return null;
 

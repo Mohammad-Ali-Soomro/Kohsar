@@ -199,26 +199,29 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   initialize: async () => {
+    // Guard against being called twice (StrictMode / Fast Refresh).
+    if (initializeStarted) return;
+    initializeStarted = true;
+
     set({ isLoading: true });
 
     // Load onboarding status
     try {
       const onboarded = await AsyncStorage.getItem('kohsar_onboarded');
       set({ isOnboarded: onboarded === 'true' });
-    } catch (err) {
-      console.error('Error reading onboarding status:', err);
+    } catch (err: any) {
+      console.error('Error reading onboarding status:', err?.message || err);
       set({ isOnboarded: false });
     }
-    
+
     let session = null;
     try {
-      // Get initial session
       const sessionResult = await supabase.auth.getSession();
       session = sessionResult.data?.session || null;
     } catch (err: any) {
-      console.error('Exception getting initial session:', err.message || err);
+      console.error('Exception getting initial session:', err?.message || err);
     }
-    
+
     try {
       if (session?.user) {
         set({ user: session.user, isAuthenticated: true, isGuest: false });
@@ -226,36 +229,52 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         set({ profile });
       }
     } catch (err: any) {
-      console.error('Exception setting user from initial session:', err.message || err);
+      console.error('Exception setting user from initial session:', err?.message || err);
     }
 
+    // Subscribe to subsequent auth changes. supabase-js fires an INITIAL_SESSION event
+    // immediately on subscribe; we skip the first invocation because we already handled it
+    // above via getSession(), avoiding a redundant profile fetch and isLoading flap.
+    let sawInitialEvent = false;
     try {
-      // Set up auth state change listener
-      supabase.auth.onAuthStateChange(async (event, currentSession) => {
-        try {
-          if (currentSession?.user) {
-            const isDifferentUser = get().user?.id !== currentSession.user.id;
-            set({ user: currentSession.user, isAuthenticated: true, isGuest: false });
-            
-            if (isDifferentUser || !get().profile) {
-              const { data: profile } = await get().fetchProfile(currentSession.user.id);
-              set({ profile });
-            }
-          } else {
-            if (!get().isGuest) {
-              set({ user: null, profile: null, isAuthenticated: false });
-            }
-          }
-        } catch (innerErr: any) {
-          console.error('Exception in auth state change callback:', innerErr.message || innerErr);
-        } finally {
-          set({ isLoading: false });
+      supabase.auth.onAuthStateChange((event, currentSession) => {
+        if (!sawInitialEvent) {
+          sawInitialEvent = true;
+          if (event === 'INITIAL_SESSION') return;
         }
+        void handleAuthChange(currentSession, get, set);
       });
     } catch (err: any) {
-      console.error('Exception setting up auth state change listener:', err.message || err);
+      console.error('Exception setting up auth state change listener:', err?.message || err);
     }
 
     set({ isLoading: false });
   },
 }));
+
+// Module-level flag prevents duplicate initialize() invocations during Fast Refresh.
+let initializeStarted = false;
+
+// Handles non-initial auth state transitions. Keeps the listener body small so any
+// thrown exception lands in the global handler with a readable stack.
+const handleAuthChange = async (
+  currentSession: { user?: User | null } | null,
+  get: () => AuthState,
+  set: (partial: Partial<AuthState>) => void
+) => {
+  try {
+    if (currentSession?.user) {
+      const isDifferentUser = get().user?.id !== currentSession.user.id;
+      set({ user: currentSession.user, isAuthenticated: true, isGuest: false });
+
+      if (isDifferentUser || !get().profile) {
+        const { data: profile } = await get().fetchProfile(currentSession.user.id);
+        set({ profile });
+      }
+    } else if (!get().isGuest) {
+      set({ user: null, profile: null, isAuthenticated: false });
+    }
+  } catch (err: any) {
+    console.error('Exception in auth state change callback:', err?.message || err);
+  }
+};
